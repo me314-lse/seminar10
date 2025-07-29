@@ -349,7 +349,24 @@ Now,  use the `addMarkers()` function to add the pubs to the map. You can also a
 ?addMarkers
 ```
 
+
 We can also plot the pubs on a static map using {ggplot2}. To do this, we need to convert the pubs data frame to a spatial object using the `sf` package. We will use the `st_as_sf()` function to convert the data frame to a spatial object fist.
+
+Let's quickly check that the `sf` package and it's dependencies are installed and loaded. If you get an error here, you can try to troubleshoot it by following the instructions in the [README](README.md) file of this repository. Note that we don't have time in class to troubleshoot this together, so this is something to do after class. The next exercise (3) will not rely on `sf` so you can easily join back in later.
+
+```{r check_sf}
+if (any(is.na(sf::sf_extSoftVersion()))) {
+    cat("sf package is not installed or not loaded correctly. Please follow the instructions in the README file to install it.\n")
+
+    # tell them which packages to install
+    cat("Please install the following dependencies:\n")
+    sf::sf_extSoftVersion()[is.na(sf::sf_extSoftVersion())] 
+} else {
+    cat("sf package is installed and loaded correctly.\n")
+}
+
+```
+
 
 ```{r static_map}
 # convert the pubs data frame to a spatial object
@@ -383,11 +400,13 @@ basemap <- ggplot(london_sf) +
     theme_minimal()
 ```
 
+
 Now add the pubs to the map using `geom_sf()` and the `pubs_sf` object we created earlier. Simply add a new `geom_sf()` layer, specifying the `data` argument to be `pubs_sf`, and set the color and size of the points. You don't need to specify any `aes()` mappings.
 
 ```{r}
 # Your code goes here
 ```
+
 
 Spatial data can not just be plotted (though arguably this is when working with it is most fun), it can also be used for analyses. We could, for example, calculate the area of each borough, then merge pubs to boroughs and calculate the pub density per borough. 
 
@@ -401,9 +420,8 @@ pubs_sf <- st_join(pubs_sf, london_sf, join = st_within)
 pubs_sf
 ```
 
-Note, we now have the BOROUGH information in the pub data. `st_join()` simply looked at the coordinates and the shapes and used the `st_within` operation to locate the pubs in the boroughs. We can now 
-
-Calculate pub density per borough. Call the new object `pub_density` and make sure it has the columns `BOROUGH`, `pub_count`, and `pub_density` (the latter is the number of pubs per square kilometer).
+### Choropleth map of historic pub-density in London
+Note, we now have the BOROUGH information in the pub data. `st_join()` simply looked at the coordinates and the shapes and used the `st_within` operation to locate the pubs in the boroughs. We can now calculate pub density per borough. Call the new object `pub_density` and make sure it has the columns `BOROUGH`, `pub_count`, and `pub_density` (the latter is the number of pubs per square kilometer).
 
 
 ```{r calculate_density}
