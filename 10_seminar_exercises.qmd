@@ -1,0 +1,985 @@
+---
+title: "Seminar 10: Unstructured Data"
+subtitle: "LSE ME314: Introduction to Data Science and Machine Learning"
+date-modified: "17 July 2025" 
+toc: true
+format: 
+    html:
+        embed-resources: true
+        code-overflow: wrap
+execute:
+  echo: true
+  eval: false
+---
+
+## Plan for today:
+
+- Web-scraping for static html pages
+
+- Using geospatial data for computation and visualization
+
+- Working with (hidden) APIs
+
+- Importing, manipulating, and using image data
+
+## Setup
+
+```{r setup_r, message=FALSE, warning=FALSE}
+# load packages
+package_check <- function(need = c()) {
+    have <- need %in% rownames(installed.packages()) # checks packages you have
+    if (any(!have)) install.packages(need[!have]) # install missing packages
+    invisible(lapply(need, library, character.only = T))
+}
+
+# this package is currently not on CRAN
+remotes::install_github("ropensci/parzer", upgrade = FALSE) # for parsing coordinates
+
+required_packages <- c(
+    "dplyr", # for data management
+    "ggplot2", # for plotting
+    "rvest", # for scraping static html
+    "sf", # for geospatial data (beautiful package)
+    "tidygeocoder", # for geocoding
+    "httr2", # for APIs
+    "jpeg", # for working with image data
+    "caret", # for machine learning
+    "purrr", # clean deeply nested data
+    "tibble", # for data frames
+    "tidyr", # for data tidying
+    "jsonlite", # for working with JSON data
+    "randomForest", # For random forests
+    "leaflet", # for interactive maps
+    "bmp", # for reading BMP images
+    "parzer" # for parsing coordinates
+)
+
+package_check(required_packages)
+
+set.seed(12345)
+```
+
+
+### Directory management and setup
+
+Before we proceed, let's do some "directory management". For this seminar code to run, it is really important that you set up your directories correctly. You only need to set the root directory to the folder called `seminar10` on your computer (the git repo you cloned for today's seminar). 
+
+```{r dirs}
+## NOTE: PLEASE REPLACE "YOUR_PATH" WITH THE PATH TO THE LOCATION ON YOUR COMPUTER
+##       WHERE YOU WOULD LIKE TO STORE ALL YOUR WORK FOR THESE EXERCISES!
+
+root <- "PATH_TO_LOCAL_REPO"
+root <- "/Users/anton/Library/CloudStorage/OneDrive-LondonSchoolofEconomics/Teaching/2025/ME314_student/seminar10" # for me
+
+ddir <- paste0(root, "/data")
+mdir <- paste0(root, "/data/mps")
+
+if (all(list.files(ddir) %in% c("London_Boroughs", "mps", "pubs_coords.csv"))) {
+    cat("Data directory correctly set up\n")
+} else {
+    cat("You have misspecified the directory. Please read the instructions above carefully and try again.\n")
+}
+
+```
+
+
+## Introduction
+
+A breathtaking amount of data is out there and just waiting to be analyzed. Unfortunately, most of this data doesn't come in neatly formatted .csv files, we have to collect it ourselves. There is a range of possible scenarios:
+
+1. Explicit Download Button
+2. Network traffic links to downloadable files
+3. Data embedded in static html 
+4. Data embedded in interactive websites 
+5. Data made available via public API
+6. Data in hidden APIs 
+
+If an API is available, you should always use the API and not web-scrape the html of a page. Not only is the data quality and stability of APIs usually better, they are also designed to deal with many requests. 
+
+## Exercise 1 - Webscraping static html pages
+
+For this exercise, we will focus on data embedded in static .html websites. We will scrape a table with the location of historic pubs in London from Wikipedia! Navigate to [https://en.wikipedia.org/wiki/List_of_pubs_in_London](https://en.wikipedia.org/wiki/List_of_pubs_in_London) and familiarize yourself with the structure of the html using the developer tools of your browser. 
+
+{rvest} is a cool package for static webscraping. It allows you to download an html and then extract data from it. It is important to understand that `read_html()` is a 'costly' operation where you download a html file (i.e. the website). You should only do that once. So don't write code like this:
+
+```{r, eval=FALSE}
+read_html("some_url.com") |>
+    html_elements(p) |>
+    html_table()
+```
+
+
+Instead, first download the html, then work on it locally. You can create manual caching functions to avoid re-downloading htmls. 
+
+```{r}
+# test if html is already in workspace
+if (exists("pubs_html")) {
+    cat("HTML already downloaded, skipping download.\n")
+} else {
+    # download the html
+    pubs_html <- rvest::read_html("https://en.wikipedia.org/wiki/List_of_pubs_in_London")
+}
+```
+
+
+Note that if you work in quarto, the code will re-execute in a new session when you render the document. To avoid re-downloading the html, you could save the html to a folder and then read it from there, not from the internet. 
+
+Let's inspect the html. It doesn't print too nicely but we can convert it to a list and then use the `View()` function to inspect it.
+
+```{r, eval=FALSE}
+print(pubs_html)
+xml2::as_list(pubs_html) |> View()
+```
+
+
+Ok, this is a terrible mess. So much information that we aren't interested in. We only want the tables and their content. Let's find an adequate selector to extract the first table from the html. We can use the `html_elements()` function to select elements from the html. When using css selectors, we can use the `#` symbol to select elements by their id and the `.` symbol to select elements by their class. We can also use the `>` symbol to select direct children of an element. We don't need prefixes for html elements themselves (like `div`, `p`, etc.) as they are the default.
+
+We could try to make our way down through the html tree manually, but it is much easier to use the developer tools of your browser to inspect the html and find the right selector.
+
+```{r}
+# going step by step would take forever
+pubs_html |>
+    html_elements("body") |>
+    html_elements("div") |>
+    rvest::html_children()
+
+# this is the selectors path safari gave me
+first_table <- pubs_html |>
+    html_elements("#mw-content-text > div.mw-content-ltr.mw-parser-output > table:nth-child(8)")
+```
+
+
+Next, we want to extract the table information from the html. We can use the `html_table()` function to extract the table data from the html element we just selected. The `html_table()` function returns a list of data frames, one for each table in the html element. In our case, we only have one table, so we can extract it directly.
+
+```{r}
+# extract the table data from the html element
+first_pub_df <- first_table |>
+    html_table()
+
+# check the class
+first_pub_df |>
+    class()
+
+str(first_pub_df)
+# we got this wrapped in a list of length 1, so let's extract the first element
+
+first_pub_df <- first_pub_df[[1]]
+```
+
+Now this is a proof of concept, but we wanted all tables! Select all `table` html elements with the following two classes: `wikitable` and `sortable`. This will give us all the tables that are used to display data on the page.
+
+```{r wikitable_extraction}
+# Your code goes here
+```
+
+Great, now we have a list of data frames, one for each table on the page. Let's check that they have the same column names and merge them if they do.
+
+```{r, eval=FALSE}
+all_pubs
+# inspect the first few tables
+lapply(all_pubs, colnames)
+```
+
+
+```{r}  
+# we can loop through the list of tables and apply the same operations to each table
+pubs_df <- lapply(all_pubs, function(table) {
+    table |>
+        # make sure the column types are consistent and names are tidy
+        mutate(
+            image = as.character(Image),
+            name = as.character(Name),
+            owner = as.character(Owner),
+            date = as.character(Date),
+            listing = as.character(`Listing?`),
+            notes = as.character(Notes),
+            .keep = "none" # keep only the columns we edited
+        )
+}) |>
+    # bind the rows together (turning the list of data frames into a single data frame)
+    bind_rows()
+
+head(pubs_df)
+```
+
+
+Now, we have the data about all these pubs, but we don't have their locations. We could scrape them from wikipedia too but we'd need the url for each pub's page for that. This wasn't returned with the table, so let's create a table manually by extracting the names and and urls separately.  
+
+Look at the html structure in your browser and compare to the code below, which extracts the pub names. 
+
+```{r}
+# This is how you get the name of the pubs
+pub_titles <- pubs_html |>
+    html_elements("table.wikitable.sortable > tbody > tr > td:nth-child(2) > a") |>
+    html_attr("title")
+```
+
+
+Now,  add code to extract the urls for each pub's wikipedia page.
+
+```{r extract_urls_wiki}
+# Your code goes here
+```
+
+
+Finally, let's combine the two columns into a dataframe. 
+
+```{r}
+pub_url_df <- tibble(
+    name = pub_titles,
+    url = paste0("https://en.wikipedia.org", pub_urls)
+)
+```
+
+
+Now that we have each pubs wikipedia page, we could scrape the coordinates from there. To do that, we would go to each page (e.g. <https://en.wikipedia.org/wiki/Ship_Tavern,_Holborn>), download the html, and extract the coordinates. 
+
+```{r}
+pub_url_df$url[1:5] # check the first few urls
+
+# read one html page
+pub_html <- read_html(sample(pub_url_df$url, 1))
+```
+
+
+Find the correct combination of a "span" element and a css class to extract the coordinates from the html. Extract the coordinates as text and call the object `pub_coords`. You can use the `html_element()` function to select a single element (first occurrence) from the html and the `html_text()` function to extract the text from that element.
+
+```{r}
+# Your code goes here
+```
+
+
+For illustration purposes, the next code chunk show how you would loop through the pubs and extract the coordinates. If left unchanged, it will only scrape 10 pubs, so feel free to try it out. You may notice all the tryCatch() statements. These are there to handle errors gracefully, so that if one pub fails to download, the loop continues with the next pub. This is important when scraping many pages, as some pages may not exist or may be temporarily unavailable. You definitely don't want your whole scraping process to stop because of one error.
+
+**We will only scrape a few entries as proof of concept. You can then import the `pubs_coords.csv` file in the `data` directory to continue with the next exercise.**
+
+```{r, eval=FALSE}
+# initialise an empty list to store the coordinates
+pub_coords_list <- list()
+
+# start at a random pub, so we don't overload the server (this is just for demonstration purposes)
+start_index <- sample(10:nrow(pub_url_df) - 10, 1)
+
+# and only read the next 10 pubs
+end_index <- start_index + 10
+
+for (i in start_index:end_index) {
+    # check whether that pub has already been scraped
+    if (!is.null(pub_coords_list[i])) {
+        cat("Coordinates for", pub_url_df$name[i], "already scraped, skipping.\n")
+        # if it has, skip to the next iteration
+        next
+    }
+
+    # try to download the pub page, return NULL if there is an error
+    pub_html <- tryCatch(
+        {
+            read_html(pub_url_df$url[i])
+        },
+        error = function(e) {
+            cat("Error downloading pub page:", pub_url_df$url[i], "\n")
+            return(NULL) # return NULL if there is an error
+        }
+    )
+
+    # extract the coordinates from the html, return NA if not found or on error
+    pub_coords <- tryCatch(
+        {
+            pub_html |>
+                html_element("span.geo-dec") |>
+                html_text()
+        },
+        error = function(e) NA
+    )
+
+    # store the coordinates in the list
+    pub_coords_list[[i]] <- pub_coords
+
+    # delay for a random number of seconds between 2 and 5
+    Sys.sleep(runif(1, min = 2, max = 5))
+
+    cat(" Downloaded coordinates for", pub_url_df$name[i], "\n")
+}
+
+unlist(pub_coords_list)
+```
+
+
+## Exercise 2 - Geospatial data
+
+We will begin by turning the pubs coordinates from a string into actual coordinates that R can understand. Then, we will plot the pubs on an interactive Map of london using `leaflet`. Finally, we will use the `sf` package and a shapefile to plot a map of London Neighbourhoods' pub-density.
+
+Read in the .csv with all coordinates. This is the dataframe you would obtain if you scraped all the pub coordinates from the previous exercise.
+
+```{r}
+pubs_df <- read.csv(paste0(ddir, "/pubs_coords.csv")) |>
+    tibble()
+```
+
+
+First, we will create an interactive map of historic pubs in London using the {leaflet} package. We need to prepare the data a little bit to make it suitable for plotting on a map. The coordinates are in a format that {parzer} can parse, so we will use that to convert them into latitude and longitude columns.
+
+```{r interactive_map}
+pubs_df <- pubs_df |>
+    mutate(
+        lat = parzer::parse_llstr(coords)[, 1],
+        lon = parzer::parse_llstr(coords)[, 2],
+    ) |>
+    select(-coords) |>
+    filter(!is.na(lat) & !is.na(lon)) # remove rows with NA coordinates
+```
+
+
+Next, let's create a basemap zoomed in on London. 
+
+```{r}
+# create an interactive map using leaflet
+int_map <- leaflet(pubs_df) |>
+    addTiles() |>
+    setView(lng = -0.1276, lat = 51.5074, zoom = 10)
+
+int_map
+
+```
+
+
+Now,  use the `addMarkers()` function to add the pubs to the map. You can also add a popup with the pub name to the Marker.
+```{r}
+# Your code goes here
+?addMarkers
+```
+
+We can also plot the pubs on a static map using {ggplot2}. To do this, we need to convert the pubs data frame to a spatial object using the `sf` package. We will use the `st_as_sf()` function to convert the data frame to a spatial object fist.
+
+```{r static_map}
+# convert the pubs data frame to a spatial object
+pubs_sf <- pubs_df |>
+    sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) # WGS84 is a common coordinate system
+
+# plot the pubs on a static map using ggplot2
+ggplot(pubs_sf) +
+    geom_sf() +
+    coord_sf(xlim = c(-0.5103751, 0.3340155), ylim = c(51.2867602, 51.6918741)) +
+    labs(title = "Pubs in London", x = "Longitude", y = "Latitude") +
+    theme_minimal()
+```
+
+
+This map would look so much better if we had a shapefile of London in the background. Let's import one using `read_sf()`  and add it to the map.
+
+```{r}
+# read in the shapefile of London
+london_sf <- sf::read_sf(paste0(ddir, "/London_Boroughs/London_Boroughs.shp")) |>
+    st_transform(4326) |> # transform to WGS84 coordinate system
+    select(BOROUGH, geometry, OBJECTID)
+
+head(london_sf)
+head(london_sf$geometry)
+
+# plot the map without pubs
+basemap <- ggplot(london_sf) +
+    geom_sf() +
+    labs(title = "London Boroughs", x = "Longitude", y = "Latitude") +
+    theme_minimal()
+```
+
+Now add the pubs to the map using `geom_sf()` and the `pubs_sf` object we created earlier. Simply add a new `geom_sf()` layer, specifying the `data` argument to be `pubs_sf`, and set the color and size of the points. You don't need to specify any `aes()` mappings.
+
+```{r}
+# Your code goes here
+```
+
+Spatial data can not just be plotted (though arguably this is when working with it is most fun), it can also be used for analyses. We could, for example, calculate the area of each borough, then merge pubs to boroughs and calculate the pub density per borough. 
+
+```{r pub_density}
+# calculate the area of each borough
+london_sf <- london_sf |>
+    mutate(area = st_area(geometry)) # area in square meters
+
+# check for each pub which borough it is in
+pubs_sf <- st_join(pubs_sf, london_sf, join = st_within)
+pubs_sf
+```
+
+Note, we now have the BOROUGH information in the pub data. `st_join()` simply looked at the coordinates and the shapes and used the `st_within` operation to locate the pubs in the boroughs. We can now 
+
+Calculate pub density per borough. Call the new object `pub_density` and make sure it has the columns `BOROUGH`, `pub_count`, and `pub_density` (the latter is the number of pubs per square kilometer).
+
+
+```{r calculate_density}
+# calculate the pub density per borough
+
+# Your code goes here
+```
+
+
+Now we need to merge the pub density with the geospatial data of London using a simple `left_join()`. 
+
+```{r merge_density}
+# Your code goes here
+
+```
+
+
+Plot the pub density on a map of London.
+
+```{r plot_density}
+# Your code goes here
+```
+
+
+## Exercise 3 - Working with APIs and unnesting data
+
+In this exercise, you will collect data about MPs via the UK parliament API. We will download names, party affiliations, and images.  
+
+### Using APIs 
+
+The house of commons website has a public API that allow you to access information about MPs. You can find the documentation here: [https://developer.parliament.uk](https://developer.parliament.uk). The API returns data in JSON format, which is easy to work with in R.
+
+We will use the {httr2} package to create and perform API requests. You have to specify an endpoints, the parameters (query) you want to use, and the format you want the data to be returned in. 
+
+```{r hoc_api}
+# We use the members search API without any parameters to get all MPs
+request <- request("https://members-api.parliament.uk") |>
+    # specify the endpoint we want to access (Members/Search)
+    req_url_path("api", "Members", "Search") |>
+    # specify the format we want to be returned (JSON)
+    req_headers("Accept" = "application/json")
+
+# check the request (this doesn't perform the request, just shows what it would do)
+request |>
+    req_dry_run()
+
+# perform the request
+response <- request |>
+    req_perform()
+
+# Check response
+cat("Status:", resp_status(response), "\n") # 200 is good, everything with 4xx or 5xx is bad. https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
+
+# Extract the content to a list
+content <- resp_body_json(response)
+
+# Let's inspect this
+lengths(content) # 20 items and some metadata
+
+# inspect the first item
+content$items[[1]] |> str()
+# content$items[[1]] |> View()
+```
+
+
+Using the correct indexing, extract the following information:
+
+- The name of the first MP
+- The name of the party of the first MP
+- The number of results returned by the API
+- The number of results per page
+
+```{r}
+# Your code goes here
+```
+
+
+If we need to loop (paginate), we get the links for the next and previous pages in the response. This is helpful!
+```{r}
+content$links
+content$links[[2]]
+content$links[[2]]$href
+```
+
+
+Two things to note here: the API is about to return all MPs it has data for, we don't want that. Let's only look at those MPs that served at any point since 1 January 2015. We can do this by adding a `membershipStartDate` parameter to the API call. Let's also add a PartyId value so we only get Labout and Tory politicians. The second thing to note is that the API returns data in pages, so we will need to loop through the pages to get all the data. The `links` part of the response will be very useful for this, as it contains the URLs for the next and previous pages.
+
+```{r}
+# add the membershipStartDate parameter to the API call
+tory_req <- request("https://members-api.parliament.uk/api/Members/Search") |>
+    req_url_query(`membershipStartDate` = "2015-01-01T00:00:00.000Z", `PartyId` = 4) |>
+    req_headers("Accept" = "application/json")
+
+# check the request
+tory_req |> req_dry_run()
+
+# perform the request
+tory_resp <- tory_req |> req_perform()
+```
+
+
+Great, usually, we would now do a loop to get all the MPs! When we loop, we make repeated calls to the API and we should stick to good etiquette. Let's first check the API documentation whether there are rate limits to respect. I couldn't find any. We can check the headers of the response to see if there are any rate limits. 
+
+```{r}
+resp_header(tory_resp, "X-RateLimit-Remaining")
+resp_header(tory_resp, "X-RateLimit-Reset")
+```
+
+
+There are no rate limits that we are being made aware of (and 20 responses per page is little, so it might make sense that the API provider is generous with the rate.) Still, we don't want to accidentally DDoS the UK Parliament website, so let's add a throttle to our request. We will also retry the request if we get a rate limit error (HTTP status code 429) or a service down error (HTTP status code 503) but not more than three times. Note: if the package you use for scraping does not support throttling, you can use `Sys.sleep()` to pause the execution of your code for a certain number of seconds.
+
+```{r}
+# create an etiquette-compliant request
+etiquette <- function(req) {
+    req <- req |>
+        # specify how to proceed after server errors
+        req_retry(
+            # try again up to 3 times if the server returns a rate limit or service down errror
+            max_tries = 3,
+            # Retry on rate limit errors (usually 429)
+            is_transient = \(resp) resp_status(resp) %in% c(429, 503),
+            # retry if WIFI is down
+            retry_on_failure = TRUE
+        ) |>
+        req_throttle(
+            # Maximum 30 requests per 60 seconds
+            capacity = 30,
+            fill_time_s = 60
+        )
+
+    return(req)
+}
+```
+
+
+We are ready to loop through the pages of the API. We won't do this here to avoid overloading the API, so the below is pseudo-code.
+
+::: {.callout-important title="Warning"}
+Please do not run the code below, it is just pseudo-code to illustrate how you would loop through the pages of the API. We have already downloaded the data for you and saved it in the `data` directory as `tories_untidy.json` and `labour_untidy.json`.
+:::
+
+
+```{r pseudo_loop, eval=FALSE}
+# initialise an empty list to store the results
+mps <- list()
+
+# create the request object with the initial parameters
+request <- request("https://members-api.parliament.uk/api/Members/Search") |>
+    req_url_query(
+        `membershipStartDate` = "2015-01-01T00:00:00.000Z", `PartyId` = 4,
+        `skip` = skip, `take` = 20
+    ) |>
+    req_headers("Accept" = "application/json") |>
+    etiquette()
+
+# loop through the pages of the API
+repeat({
+    # Perform the request
+    response <- request |> req_perform()
+
+    # get the response body as JSON
+    body <- resp_body_json(response)
+
+    # append the results to the list
+    mps <- c(mps, body$items)
+
+    # Extract url for the next page
+    next_page_url <- body$links[[2]]$href
+
+    # If there is no next page, we are done
+    if (is.null(next_page_url)) {
+        break # exit the loop if there is no next page
+    }
+
+    # If there is a next page, update the request with the next page URL
+    request <- request |>
+        req_url_path(next_page_url) |>
+        etiquette()
+
+    # print progress
+    cat("Downloaded", length(mps), "of", resp_body_json(tory.resp)$totalResults, "MPs so far...\n")
+})
+```
+
+### Unnesting deeply nested data
+
+We ran this code for you before and downloaded all the Tory and Labour MPs that served since 1 January 2015. Import the `labour_untidy.json` and `tories_untidy.json` files from the `data` directory to get the data. The data will be stored as a nested list in R. We further add to its nestedness by combining the two lists into one.
+
+```{r}
+# read in the data
+labour_json <- jsonlite::read_json(paste0(mdir, "/labour_untidy.json"))
+tories_json <- jsonlite::read_json(paste0(mdir, "/tories_untidy.json"))
+
+mp_list <- list(tories_json, labour_json) # combine the two lists
+
+```
+
+
+Let's now try to unnest this data as much as possible. There are two very helpful packages to help us with this: {tidyr} and {purrr}. The former is great for tidying data, the latter is great for working with lists. 
+
+{tidyr} has two workhorses for unnesting data: `unnest_longer()` and `unnest_wider()`. As a general rule, use `unnest_wider()` if there are multiple variables in a list and you want to turn them into columns. Use `unnest_longer()` if there is only one variable in a list but it has multiple values. 
+
+Use `map()` from {purrr} together with `pluck()` to extract specific values from deeply nested lists. This can be helpful when you know that at a certain level, there is one observation per row which you want to extract. 
+
+In the chunk below, use the functions described above to create a dataframe has one row per MP and one column per variable. It should contain all the information in the `item` section of the html response and the contact url for each MP (from the `links` section of the response). There is some code already there to get you started, but the rest is up to you.
+```{r}
+# Unnest this deeply nested data
+mp_df <- mp_list |>
+    # convert to a tibble (data frame that can handle nested data better)
+    tibble() |>
+    # row 1 are the tories, row 2 are the labour MPs. Let's unnest longer so each row is one MP (with all their info in a list)
+    tidyr::unnest_longer(mp_list) |>
+    # now we have a list of MPs, but each MP has a list of values. Let's unnest this wider so each column is one value
+    tidyr::unnest_wider(mp_list)
+
+# Your code goes here
+```
+
+
+You will encounter `.json` data very often in data science. If you have nested data, it is often more efficient to use json than csv or other rectangular formats that would require duplicate rows or would hold many NA values. 
+
+
+## Exercise 4 - Working with images
+
+Let's use the dataframe we just created to download the images of Tory and Labour MPs (we have the urls). Again, we already did that for you, so you don't need to download all images, but let's familiarize ourselves with the process based on an example. 
+
+If you didn't manage to create the dataframe with the MPs, you can use the `mps_df.csv` file in the `data/mps` directory. It contains all the information we need to download the images.
+
+```{r, eval=FALSE}
+# read in the MPs data
+mp_df <- read.csv(paste0(mdir, "/mps.csv")) |>
+    tibble()
+```
+
+Once we have the images, we will read them into R and inspect their numeric representation. We will use nothing but the color values to train a random forest model to predict whether an MP is a Labour MP or a Tory MP. 
+
+Let's begin by creating a path for each MP's image. We will use the `id` column from the dataframe to create a unique filename for each MP. The images will be stored in the `data/mps` directory. The loop checks whether the image already exists before downloading it, so you can run this code multiple times without downloading the same images again. Such checks are important when you web-scrape!
+
+
+```{r}
+# Create a new column in the mp_df dataframe with the path to the image
+mp_df <- mp_df |>
+    mutate(
+        # create a new column with the image URL
+        image = paste0(mdir, "/", id, ".jpg")
+    )
+
+head(mp_df$image)
+
+# let's identify Keir Starmer, Rishi Sunak, and Liz Truss and delete two of their images
+pms_id <- grep("Starmer|Sunak|Truss", mp_df$nameDisplayAs)
+mp_df[pms_id, ] # check the MPs we are going to delete and retry
+
+# only delete two of them
+file.remove(mp_df[pms_id, ]$image[c(1, 2)])
+
+# Download the thumbnails to the mp folder
+for (i in pms_id) {
+    # we won't download anything that is already there
+    if (file.exists(mp_df$image[i])) {
+        cat("Image for", mp_df$nameDisplayAs[i], "already exists, skipping download.\n")
+        next
+    }
+
+    # but if we don't have the image, we download it
+    cat("Downloading image for", mp_df$nameDisplayAs[i], "\n")
+    # download the image
+
+    download.file(mp_df$thumbnailUrl[i], mp_df$image[i], mode = "wb")
+    # delay for a random number of seconds between 2 and 5
+
+    Sys.sleep(runif(1, min = 0, max = .5))
+}
+
+```
+
+
+Let's now check how we can use R to work with image data. We will use the `jpeg` package to read the images into R. The images are stored in JPEG format, so we will use the `readJPEG()` function from the `jpeg` package.
+
+```{r}
+img <- readJPEG(mp_df[grep("Sunak", mp_df$nameListAs), ]$image)
+
+# Let's inspect the dimensionality
+dim(img)
+
+# We have 240 rows and 240 columns, meaning that the image has 240x240 pixels. Each pixel has three color channels: red, green, and blue. The values are between 0 and 1, where 0 is no color and 1 is full color intensity.
+
+## Create a long tibble that ggplot can recognise and plot as a raster
+tp <- tibble(expand.grid(y = dim(img)[1]:1, x = 1:dim(img)[2]))
+tp$r <- as.vector(img[, , 1])
+tp$g <- as.vector(img[, , 2])
+tp$b <- as.vector(img[, , 3])
+
+# convert RGB to hex for filling
+tp$fill <- rgb(tp$r, tp$g, tp$b)
+
+head(tp)
+
+sum(tp$r)
+sum(tp$g)
+sum(tp$b)
+
+# Now plot
+z <- ggplot(tp, aes(x = x, y = y, fill = fill)) +
+    geom_raster() +
+    scale_fill_identity() +
+    coord_equal(ratio = 1) +
+    theme_void() +
+    theme(
+        plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+        plot.subtitle = element_text(hjust = 0.5, size = 12, face = "italic"),
+        strip.text.x = element_text(size = 6)
+    )
+
+print(z)
+
+```
+
+
+Ok wow, nothing stops ggplot2! Let's create a picture from scratch, simply of three pixels. One is red, one is green, and one is blue. 
+
+```{r, eval=FALSE}
+tibble(
+    x = _______,
+    y = _______,
+    fill = c(
+        _______,
+        _______,
+        _______
+    )
+) |>
+    ggplot(aes(x = x, y = y, fill = fill)) +
+    geom_tile() +
+    scale_fill_identity() +
+    coord_equal(ratio = 1) +
+    theme_void()
+
+```
+
+
+You are, of course, not limited to boring red, green, and blue. By mixing the colors, you can create any color you like:
+
+```{r}
+tibble(
+    x = 1,
+    y = 6:1,
+    fill = c(
+        rgb(0.894, 0.012, 0.012), # Red
+        rgb(1.000, 0.549, 0.000), # Orange
+        rgb(1.000, 0.929, 0.000), # Yellow
+        rgb(0.000, 0.502, 0.149), # Green
+        rgb(0.000, 0.302, 1.000), # Blue
+        rgb(0.459, 0.027, 0.529) # Purple
+    )
+) |>
+    ggplot(aes(x = x, y = y, fill = fill)) +
+    geom_tile(width = 3, height = 1) +
+    scale_fill_identity() +
+    coord_fixed(ratio = .30) +
+    theme_void() 
+```
+
+
+### Extracting basic features from images
+
+We can plot our image using {ggplot2} and we can study its numeric represenation. But how can we use this data to do anything useful? The first step is to extract features from the image. By looking at the color values, we can calculate the share of each color, the saturation, the brightness, and other picture level features that might be useful for classification tasks. 
+
+If you check [https://members.parliament.uk/members/commons](https://members.parliament.uk/members/commons) once more, you will see that Labour MPs tend to wear something red, while tories tend to wear something blue. Let's see whether we can retrieve some helpful features from the images, that will allow us to classify the MPs party affiliation using only their images.
+
+Below, we define a function that extracts features from a single image. In the first rows, add code to extract the red, green, and blue channels from the image. Then, fill in the gaps below.
+
+```{r}
+# Function to extract features from a single image
+extract_image_features <- function(img_path) {
+    img <- readJPEG(img_path) # read the image
+
+    # Extract RGB channels
+    r <- ______________
+    g <- ______________
+    b <- ______________
+
+    # Calculate various red-related features
+    features <- list(
+
+        # Basic red statistics
+        mean_red = _______,
+        median_red = _______,
+        sd_red = _______,
+        max_red = max(r),
+        min_red = min(r),
+
+        # Red relative to other channels
+        mean_red_minus_green = mean(r - g),
+        mean_red_minus_blue = mean(r - b),
+        mean_red_ratio = mean(r / (r + g + b + 0.001)), # avoid division by zero
+
+        # Proportion of pixels where red is dominant
+        prop_red_dominant = mean(r > g & r > b),
+        prop_strong_red_dominant = mean(r > g + 0.1 & r > b + 0.1),
+
+        # Red intensity features
+        prop_high_red = mean(r > 0.5),
+        prop_very_high_red = mean(r > 0.7),
+        mean_red_squared = mean(r^2),
+
+        # Pure red detection (high red, low green/blue)
+        prop_pure_red = mean(r > 0.5 & g < 0.3 & b < 0.3),
+        prop_reddish = mean(r > 0.4 & r > g + 0.1 & r > b + 0.1),
+
+        # Color saturation features
+        mean_saturation = mean(pmax(r, g, b) - pmin(r, g, b)),
+        mean_red_saturation = mean(ifelse(r == pmax(r, g, b),
+            pmax(r, g, b) - pmin(r, g, b), 0
+        )),
+
+        # Warm vs cool colors
+        warm_color_ratio = mean((r + 0.5 * g) / (b + 0.5 * g + 0.001)),
+
+        # Red clustering (how concentrated is red in the image)
+        red_top_quartile_mean = mean(sort(r, decreasing = TRUE)[1:floor(length(r) * 0.25)]),
+
+        # Other color channel features for comparison
+        mean_green = mean(g),
+        mean_blue = mean(b),
+
+        # Overall brightness
+        mean_brightness = mean((r + g + b) / 3)
+    )
+
+    return(features)
+}
+
+```
+
+
+Now, let's loop through all the images and extract the features we defined above. We will store the results in a dataframe.
+
+```{r, warning=FALSE, message=FALSE}
+# this will throw a bunch of errors because some MPs have no image (just a placeholder)
+image_features <- lapply(mp_df$image, function(x) {
+    tryCatch(
+        {
+            extract_image_features(x)
+        },
+        error = function(e) {
+            message("Error processing image: ", x, " - ", e$message)
+            return(NULL) # return NULL if there is an error
+        }
+    )
+})
+
+# some errors which we can ignore
+length(image_features)
+dim(mp_df)
+
+# turn this into a dataframe and add the MP info
+image_df <- image_features |>
+    tibble() |>
+    tidyr::unnest_wider(1) |>
+    mutate(id = mp_df$id, name = mp_df$nameDisplayAs, party = mp_df$latestParty_name)
+
+```
+
+
+Now, let's use a random forest model to predict partisanship based on the image features. We will use the `randomForest` package to train the model. Don't worry about the hyperparameter tuning, the code below should work well enough for our purposes. First, we need to clean the data a bit.
+
+```{r}
+# let's first remove any rows with NA values
+image_df <- na.omit(image_df)
+dim(image_df)
+
+# Convert party to a factor
+table(image_df$party)
+
+image_df$labour <- ifelse(image_df$party == "Labour" |
+    image_df$party == "Labour (Co-op)", 1, 0)
+
+image_df$labour <- factor(image_df$labour,
+    levels = c(0, 1),
+    labels = c("Tory", "Labour")
+)
+
+# remove all character columns and the id
+image_df <- image_df %>%
+    select(-c(id, name, party))
+
+```
+
+
+Let's create a train-test split and train a random forest model to predict whether an MP is in the Labour party or not. We will use the `randomForest` package to train the model.
+
+```{r}
+# Test and train split
+set.seed(12345)
+train_idx <- sample(1:nrow(image_df), size = 0.8 * nrow(image_df), replace = FALSE)
+train_X <- image_df[train_idx, ] |> select(-labour)
+train_y <- image_df[train_idx, ]$labour
+test_X <- image_df[-train_idx, ] |> select(-labour)
+test_y <- image_df[-train_idx, ]$labour
+
+# Random Forest for classification, no hyperparameter tuning
+rf_model <- randomForest(
+    x = train_X, y = train_y,
+    importance = TRUE,
+    ntree = 250,
+    mtry = 2,
+    type = "classification"
+)
+
+# Check the model
+print(rf_model)
+
+# Make predictions on the test set
+predictions <- predict(rf_model, newdata = test_X)
+
+# Check the confusion matrix
+confusionMatrix(predictions, test_y)
+
+# Check variable importance
+randomForest::varImpPlot(rf_model)
+```
+
+
+Not too bad if you consider that we only used trivial color features! We got 67.1% right, with very little effort.
+
+How much you can do with image data really comes down to which features you are able to extract. There are other packages like {imager}, {magick} or {EBimage} that can be helpful for more advanced image processing. We completely discarded all the individual pixels and only used summary statistics of the color values. If you want to do more advanced image processing, you can use convolutional neural networks (CNNs) that are able to extract features from images automatically. This is a very active area of research and there are many pre-trained models available that you can use for your own tasks.
+
+Also note that video image is nothing but a sequence of images. So once you have mastered image data, you can also work with video data as well, it's just a question of computing power and storage space.
+
+## Bonus - Hidden APIs
+
+Very often, websites have APIs that can conveniently be used to access data but that are not publicly documented. These APIs are often used by the website itself to display data on the page, but they are not intended for public use. However, you can still access them by inspecting the network requests made by the website. The same scraping etiquette as with static webscraping applies!
+
+Try out the following:
+
+- Go to the LSE summer school page: <https://www.lse.ac.uk/study-at-lse/summer-schools/summer-school>
+- Open the developer tools in your browser (F12 or right-click and select "Inspect")
+- Go to the "Network" tab and reload the page
+- select the subject area "Research Methods"
+- Click search and monitor the network requests
+- Locate the most recent "search" request in the network tab. Right-click it and copy as cURL.
+- Navigate to <https://hoppscotch.io> (usually, you would want to use "Postman" for this, but Hoppscotch is a nice web-based alternative)
+- Paste the cURL command into Hoppscotch and execute it
+- You will see that the API returns a JSON object with all the courses in the Research Methods subject area. You can use this API, change query parameters and easily retrieve data from the LSE summer school website.
+- You can also export the code to R and then use the `httr2` package. The below code is what you would get:
+
+Notice that there is a header with an access token. It was probably generated when I accessed the page and is only valid for a limited time. This is one way that APIs are protected and it means that the code below will only work for a limited time. If you encounter such an API, you can either try to regenerate access tokens regularly or switch to more brute-force scraping methods like `RSelenium`, essentially imitating to interact with the website like a human.
+
+```{r, eval=FALSE}
+# Make the request
+response <- request("https://api-else.cloud.contensis.com/api/delivery/projects/summerschool/entries/search") |>
+    req_url_query(
+        fields = "entryTitle,entryDescription,standfirst,sys.contentTypeId,sys.slug,sys.uri,sys.version.published,thumbnailImage,hero,featuredImage,programmeType,format,programmeStatus,location,subjectArea",
+        linkDepth = "1",
+        pageIndex = "0",
+        pageSize = "15",
+        where = '[{"field":"sys.versionStatus","equalTo":"published"},{"field":"subjectArea.sys.id","in":["da09c8b3-49c7-4b87-bf57-44ab5f0a68d7"]},{"and":[{"field":"sys.dataFormat","equalTo":"entry"},{"field":"sys.contentTypeId","in":["programme"]}]}]'
+    ) |>
+    req_headers(
+        accesstoken = "gnIlDXEa99dkods6o6PZfZ3vAVrBqeUecgrywqZ00SUDwRi7"
+    ) |>
+    req_perform()
+
+# Get the content
+data <- resp_body_json(response)
+
+```
+
+
+
+## By the end of this seminar you should:
+
+- understand how to transform html data into tidy data using {rvest}
+
+- be aware of the availability and usefulness of APIs and have some understanding of their structure
+
+- Be able to ingest, merge, and plot geospatial data using the {sf} package
+
+- Understand how image data can be represented and used in R
