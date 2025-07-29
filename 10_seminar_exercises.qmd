@@ -232,7 +232,7 @@ pub_url_df <- tibble(
 ```
 
 
-Now that we have each pubs wikipedia page, we could scrape the coordinates from there. To do that, we would go to each page (e.g. <https://en.wikipedia.org/wiki/Ship_Tavern,_Holborn>), download the html, and extract the coordinates. 
+Now that we have each pubs wikipedia page, we could scrape the coordinates from there. To do that, we would go to each page (e.g. <https://en.wikipedia.org/wiki/Cross_Keys,_Dagenham>), download the html, and extract the coordinates. 
 
 ```{r}
 pub_url_df$url[1:5] # check the first few urls
