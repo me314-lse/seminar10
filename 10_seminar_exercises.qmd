@@ -1,5 +1,5 @@
 ---
-title: "Seminar 10: Unstructured Data"
+title: "Seminar 10: Digitisation"
 subtitle: "LSE ME314: Introduction to Data Science and Machine Learning"
 date-modified: "28 July 2026" 
 toc: true
@@ -14,13 +14,15 @@ execute:
 
 ## Plan for today:
 
-- Web-scraping for static html pages
+- Digital data: bits, bytes, and Base64
+
+- Character encoding: how text is stored as bytes, and fixing encoding issues
+
+- Importing, manipulating, and using image data
 
 - Using geospatial data for computation and visualization
 
-- Working with (hidden) APIs
-
-- Importing, manipulating, and using image data
+- Bonus: working with audio data
 
 ## Setup
 
@@ -35,18 +37,16 @@ package_check <- function(need = c()) {
 # remotes::install_github("ropensci/parzer", upgrade = FALSE) # for parsing coordinates
 
 required_packages <- c(
+    "readr", # for reading text files and handling encoding
+    "openssl", # for Base64 encoding of binary data
     "dplyr", # for data management
     "ggplot2", # for plotting
-    "rvest", # for scraping static html
-    "sf", # for geospatial data (beautiful package)
-    "httr2", # for APIs
-    "jpeg", # for working with image data
-    "caret", # for machine learning
-    "purrr", # clean deeply nested data
     "tibble", # for data frames
     "tidyr", # for data tidying
-    "jsonlite", # for working with JSON data
+    "jpeg", # for working with image data
+    "caret", # for machine learning
     "randomForest", # For random forests
+    "sf", # for geospatial data (beautiful package)
     "leaflet", # for interactive maps
     "parzer" # for parsing coordinates
 )
@@ -66,564 +66,168 @@ Before we proceed, let's do some "directory management". For this seminar code t
 ddir <- "data"
 mdir <- "data/mps"
 
-if (all(list.files(ddir) %in% c("London_Boroughs", "mps", "pubs_coords.csv"))) {
+required_data <- c("London_Boroughs", "mps", "pubs_coords.csv",
+                   "utf-examples-8.txt", "utf-examples-16.txt", "utf-examples-32.txt")
+if (all(required_data %in% list.files(ddir))) {
     cat("Data directory correctly set up\n")
 } else {
     cat("You have misspecified the directory. Please read the instructions above carefully and try again.\n")
 }
-
 ```
 
 
-## Introduction
+## Exercise 1: Digital data and bytes
 
-A breathtaking amount of data is out there and just waiting to be analyzed. Unfortunately, most of this data doesn't come in neatly formatted .csv files, we have to collect it ourselves. There is a range of possible scenarios:
+Everything on a computer is stored as **bits** (0s and 1s), grouped into **bytes** (8 bits). Before we worry about what data *means*, let's look at how R stores it as raw bytes, and how we can move non-text data through text-only channels using Base64.
 
-1. Explicit Download Button
-2. Network traffic links to downloadable files
-3. Data embedded in static html 
-4. Data embedded in interactive websites 
-5. Data made available via public API
-6. Data in hidden APIs 
+When you create an object in R, you are making digital data. R shows it to you in a friendly format, but you can ask for the underlying bytes.
 
-If an API is available, you should always use the API and not web-scrape the html of a page. Not only is the data quality and stability of APIs usually better, they are also designed to deal with many requests. 
+```{r}
+x <- 5L # an integer object
+as.raw(x) # the byte, written as a hex code
+as.integer(x) # the same byte in decimal
+```
 
-## Exercise 1 - Webscraping static html pages
+We can also see the raw bits. The line below writes out the eight bits of the byte:
 
-For this exercise, we will focus on data embedded in static .html websites. We will scrape a table with the location of historic pubs in London from Wikipedia! Navigate to [https://en.wikipedia.org/wiki/List_of_pubs_in_London](https://en.wikipedia.org/wiki/List_of_pubs_in_London) and familiarize yourself with the structure of the html using the developer tools of your browser. 
+```{r}
+paste(rev(as.integer(rawToBits(as.raw(x)))), collapse = "")
+```
 
-{rvest} is a cool package for static webscraping. It allows you to download an html and then extract data from it. It is important to understand that `read_html()` is a 'costly' operation where you download a html file (i.e. the website). You should only do that once. So don't write code like this:
+Now it's your turn. In the chunk below, show the integer `20` as a hex code, as a decimal, and as binary bits.
+
+```{r}
+# Your code goes here
+```
+
+Every file on your computer is just bytes. When you read a file normally, R "translates" those bytes into objects you recognise. But you can also read the raw bytes with no translation:
+
+```{r}
+raw_bytes <- read_file_raw(paste0(ddir, "/pubs_coords.csv"))
+head(raw_bytes) # the first six bytes (not rows!)
+```
+
+Because a `.csv` is really just text, we can translate those bytes back into characters:
+
+```{r}
+rawToChar(head(raw_bytes, 40)) # the first 40 bytes, read as text
+```
+
+A file should contain exactly as many bytes as its size on disk. In the chunk below, use `length()` to count the bytes in `raw_bytes`, and compare this to the file's size in your computer's file browser.
+
+```{r}
+# Your code goes here
+```
+
+Character encoding (the next exercise) only works for text. Lots of data is **binary**: an image or audio file is not text, so reading its bytes as characters gives gibberish. Sometimes we still need to move binary data through a **text-only** channel (an email, a JSON field, a web request). **Base64** solves this by re-encoding binary bytes as safe text.
+
+Let's read the raw bytes of one of the MP photos (a JPEG):
+
+```{r}
+jpg_file <- list.files(mdir, pattern = "\\.jpg$", full.names = TRUE)[1]
+jpg_bytes <- read_file_raw(jpg_file)
+head(jpg_bytes, 15) # not text! these are the raw JPEG bytes
+```
+
+Now we Base64-encode the first 30 bytes. Base64 represents every 6 bits with one character, so it needs $2^6 = 64$ different characters:
+
+```{r}
+library("openssl")
+encoded <- base64_encode(jpg_bytes[1:30])
+encoded
+```
+
+Base64 has a cost: each character encodes 6 bits but takes 8 bits (one byte) to store, so Base64 text is about 33% larger than the original. In the chunk below, confirm this by comparing the number of characters in `encoded` to the 30 raw bytes, and decode it back with `base64_decode()` to check that it round-trips.
+
+```{r}
+# Your code goes here
+```
+
+## Exercise 2: Encoding
+
+In this exercise we will discuss character encoding: how text is stored as bytes, and why encoding issues arise.
+
+__Encoding Basics:__
+
+*To encode means to use something to represent something else. An encoding is the set of rules with which to convert something from one representation to another.*
+
+* Computers do not store letters, books or pictures $\rightarrow$ they store bits
+* Bits are the smallest unit of storage on a computer: a 0 or 1
+* __Encoding__ = the mapping between character and code points
+* Encodings use differing number of bits to represent characters: 7-bit, 8-bit, 16-bit, etc.
+
+__Bits:__
+
+* 8 bits are 1 byte
+* With n bits, we can store $2^n$ patterns
+* Bits represent letters and other characters using a combination of 0 and 1 based on some regulation $\rightarrow$ ASCII
+* Bits are *case-sensitive*
+* Kilobytes, megabytes, gigabytes, etc. are metric aggregations of bytes
+
+
+__ASCII and Unicode:__
+
+* ASCII is the original character set/ encoding, only used 7 bits  and was then extended to 8 (ISO-8859-1) $\rightarrow$ $2^8$ = 256 characters
+* __Unicode__ = a universal character set, stored using encodings such as UTF-8 (the most common), UTF-16, or UTF-32
+
+
+![](figs/ASCII%20table.png)
+
+__Mojibake__ = underlying bit sequences translated into the wrong characters $\rightarrow$ wrongly detected encoding of a text file returns gibberish
+
+
+First, let's examine how special characters can affect file size. Since `readr` encodes all text files with UTF-8, special characters will require more bytes.
+
+When a plain text file is initially saved, it has an encoding. But the encoding is not stored as metadata in plain text files.
+
+By default `readr` will encode files it saves as UTF-8. As far as we know, you cannot choose a different encoding when you write a file in `readr` using `write_file`. For the most part, this is not only okay, it's preferable. Let's see why through some examples.
+
+We created three files in which we wrote "&uüДሊ🫠" using different encodings:
+
+- `utf-examples-8.txt` (UTF-8): 13 bytes
+- `utf-examples-16.txt` (UTF-16): 16 bytes
+- `utf-examples-32.txt` (UTF-32): 28 bytes
+
+Note that the UTF-32 encoded file is more than double the size of UTF-8 (just to store the same characters!). Next, let's try to open them.
+
+```{r}
+read_file("data/utf-examples-8.txt") # This works (sort of...)
+```
+
+
+```{r}
+read_file("data/utf-examples-16.txt") # This drops most of the characters
+```
+
+
+```{r}
+read_file("data/utf-examples-32.txt") # This drops most of the characters
+```
+
+
+**Questions**:
+
+- Why do so many characters disappear or get corrupted when using UTF-16 or UTF-32, compared to UTF-8? What causes this?
+
+__In case of encoding issues:__
 
 ```{r, eval=FALSE}
-# read_html("some_url.com") %>%
-#    html_elements(p) %>%
-#    html_table()
+# For a character vector x, obtain texts assuming a different encoding with
+parse_character(x, locale = locale(encoding = "Latin1"))
+
+# or to make a guess about encoding in R
+guess_encoding(charToRaw(x))
 ```
 
 
-Instead, first download the html, then work on it locally. You can create manual caching functions to avoid re-downloading htmls. 
+
+## Exercise 3: Working with images
+
+Let's download the images of Tory and Labour MPs using the `mps.csv` dataset (which has their thumbnail urls). Again, we already did that for you, so you don't need to download all images, but let's familiarize ourselves with the process based on an example.
+
+We load the MP data from the `mps.csv` file in the `data/mps` directory. It contains all the information we need to download the images (the webscraping and API work that produced it is now in Seminar 11).
 
 ```{r}
-# test if html is already in workspace
-if (exists("pubs_html")) {
-    cat("HTML already downloaded, skipping download.\n")
-} else {
-    # download the html
-    pubs_html <- rvest::read_html("https://en.wikipedia.org/wiki/List_of_pubs_in_London")
-}
-```
-
-
-Note that if you work in quarto, the code will re-execute in a new session when you render the document. To avoid re-downloading the html, you could save the html to a folder and then read it from there, not from the internet. 
-
-Let's inspect the html. It doesn't print too nicely but we can convert it to a list and then inspect it.
-
-```{r, eval=FALSE}
-print(pubs_html)
-str(xml2::as_list(pubs_html), max.level = 2)
-```
-
-
-Ok, this is a terrible mess. So much information that we aren't interested in. We only want the tables and their content. Let's find an adequate selector to extract the first table from the html. We can use the `html_elements()` function to select elements from the html. When using css selectors, we can use the `#` symbol to select elements by their id and the `.` symbol to select elements by their class. We can also use the `>` symbol to select direct children of an element. We don't need prefixes for html elements themselves (like `div`, `p`, etc.) as they are the default.
-
-We could try to make our way down through the html tree manually, but it is much easier to use the developer tools of your browser to inspect the html and find the right selector.
-
-```{r}
-# grab the first data table by class, not by position
-first_table <- pubs_html %>%
-    html_elements("table.wikitable.sortable") %>%
-    magrittr::extract2(1)
-
-print(first_table)
-```
-
-
-Next, we want to extract the table information from the html. We can use the `html_table()` function to extract the table data from the html element we just selected. The `html_table()` function returns a list of data frames, one for each table in the html element. In our case, we only have one table, so we can extract it directly.
-
-```{r}
-# extract the table data from the html element
-first_pub_df <- first_table %>%
-    html_table()
-
-# check the class
-first_pub_df %>%
-    class()
-
-str(first_pub_df) # already a single tibble, no list wrapper to unnest
-```
-
-Now this is a proof of concept, but we wanted all tables! Select all `table` html elements with the following two classes: `wikitable` and `sortable`. This will give us all the tables that are used to display data on the page.
-
-```{r wikitable_extraction}
-# Your code goes here
-```
-
-Great, now we have a list of data frames, one for each table on the page. Let's check that they have the same column names and merge them if they do.
-
-```{r, eval=FALSE}
-all_pubs
-# inspect the first few tables
-lapply(all_pubs, colnames)
-```
-
-
-```{r}  
-# we can loop through the list of tables and apply the same operations to each table
-pubs_df <- lapply(all_pubs, function(table) {
-    table %>%
-        # make sure the column types are consistent and names are tidy
-        mutate(
-            image = as.character(Image),
-            name = as.character(Name),
-            owner = as.character(Owner),
-            date = as.character(Date),
-            listing = as.character(`Listing?`),
-            notes = as.character(Notes),
-            .keep = "none" # keep only the columns we edited
-        )
-}) %>%
-    # bind the rows together (turning the list of data frames into a single data frame)
-    bind_rows()
-
-head(pubs_df)
-```
-
-
-Now, we have the data about all these pubs, but we don't have their locations. We could scrape them from wikipedia too but we'd need the url for each pub's page for that. This wasn't returned with the table, so let's create a table manually by extracting the names and and urls separately.  
-
-Look at the html structure in your browser and compare to the code below, which extracts the pub names. 
-
-```{r}
-# This is how you get the name of the pubs
-pub_titles <- pubs_html %>%
-    html_elements("table.wikitable.sortable > tbody > tr > td:nth-child(2) > a") %>%
-    html_attr("title")
-```
-
-
-Now,  add code to extract the urls for each pub's wikipedia page.
-```{r extract_urls_wiki}
-# Your code goes here
-```
-
-
-Finally, let's combine the two columns into a dataframe. 
-
-```{r}
-pub_url_df <- tibble(
-    name = pub_titles,
-    url = paste0("https:", pub_urls)
-)
-
-print(pub_url_df)
-```
-
-
-Now that we have each pubs wikipedia page, we could scrape the coordinates from there. To do that, we would go to each page (e.g. <https://en.wikipedia.org/wiki/Ship_Tavern,_Holborn>), download the html, and extract the coordinates. 
-
-```{r}
-pub_url_df$url[1:5] # check the first few urls
-
-# read one html page
-pub_html <- read_html(sample(pub_url_df$url, 1))
-```
-
-
-Find the correct combination of a "span" element and a css class to extract the coordinates from the html. Extract the coordinates as text and call the object `pub_coords`. You can use the `html_element()` function to select a single element (first occurrence) from the html and the `html_text()` function to extract the text from that element.
-
-```{r}
-# Your code goes here
-```
-
-
-For illustration purposes, the next code chunk show how you would loop through the pubs and extract the coordinates. If left unchanged, it will only scrape 10 pubs, so feel free to try it out. You may notice all the tryCatch() statements. These are there to handle errors gracefully, so that if one pub fails to download, the loop continues with the next pub. This is important when scraping many pages, as some pages may not exist or may be temporarily unavailable. You definitely don't want your whole scraping process to stop because of one error.
-
-**We will only scrape a few entries as proof of concept. You can then import the `pubs_coords.csv` file in the `data` directory to continue with the next exercise.**
-
-```{r, eval=FALSE}
-# initialise an empty list to store the coordinates
-pub_coords_list <- list()
-
-# start at a random pub, so we don't overload the server (this is just for demonstration purposes)
-start_index <- sample(10:(nrow(pub_url_df) - 10), 1)
-
-# and only read the next 10 pubs
-end_index <- start_index + 10
-
-for (i in start_index:end_index) {
-    # check whether that pub has already been scraped
-    if (i <= length(pub_coords_list) && !is.null(pub_coords_list[[i]])) {
-        cat("Coordinates for", pub_url_df$name[i], "already scraped, skipping.\n")
-        # if it has, skip to the next iteration
-        next
-    }
-
-    # try to download the pub page, return NULL if there is an error
-    pub_html <- tryCatch(
-        {
-            read_html(pub_url_df$url[i])
-        },
-        error = function(e) {
-            cat("Error downloading pub page:", pub_url_df$url[i], "\n")
-            return(NULL) # return NULL if there is an error
-        }
-    )
-
-    # extract the coordinates from the html, return NA if not found or on error
-    pub_coords <- tryCatch(
-        {
-            pub_html %>%
-                html_element("span.geo-dec") %>%
-                html_text()
-        },
-        error = function(e) NA
-    )
-
-    # store the coordinates in the list
-    pub_coords_list[[i]] <- pub_coords
-
-    # delay for a random number of seconds between 2 and 5
-    Sys.sleep(runif(1, min = 2, max = 5))
-
-    cat(" Downloaded coordinates for", pub_url_df$name[i], "\n")
-}
-
-unlist(pub_coords_list)
-```
-
-
-
-## Exercise 2 - Geospatial data
-
-We will begin by turning the pubs coordinates from a string into actual coordinates that R can understand. Then, we will plot the pubs on an interactive Map of london using `leaflet`. Finally, we will use the `sf` package and a shapefile to plot a map of London Neighbourhoods' pub-density.
-
-Read in the .csv with all coordinates. This is the dataframe you would obtain if you scraped all the pub coordinates from the previous exercise.
-
-```{r}
-pubs_df <- read.csv(paste0(ddir, "/pubs_coords.csv")) %>%
-    tibble()
-```
-
-
-First, we will create an interactive map of historic pubs in London using the {leaflet} package. We need to prepare the data a little bit to make it suitable for plotting on a map. The coordinates are in a format that {parzer} can parse, so we will use that to convert them into latitude and longitude columns.
-
-```{r interactive_map}
-pubs_df <- pubs_df %>%
-    mutate(
-        lat = parzer::parse_llstr(coords)[, 1],
-        lon = parzer::parse_llstr(coords)[, 2],
-    ) %>%
-    select(-coords) %>%
-    filter(!is.na(lat) & !is.na(lon)) # remove rows with NA coordinates
-```
-
-
-Next, let's create a basemap zoomed in on London. 
-
-```{r}
-# create an interactive map using leaflet
-int_map <- leaflet(pubs_df) %>%
-    addTiles() %>%
-    setView(lng = -0.1276, lat = 51.5074, zoom = 10)
-
-int_map
-
-```
-
-
-Now,  use the `addMarkers()` function to add the pubs to the map. You can also add a popup with the pub name to the Marker.
-```{r}
-# Your code goes here
-?addMarkers
-```
-
-We can also plot the pubs on a static map using {ggplot2}. To do this, we need to convert the pubs data frame to a spatial object using the `sf` package. We will use the `st_as_sf()` function to convert the data frame to a spatial object first.
-
-```{r static_map}
-# convert the pubs data frame to a spatial object
-pubs_sf <- pubs_df %>%
-    sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) # WGS84 is a common coordinate system
-
-# plot the pubs on a static map using ggplot2
-ggplot(pubs_sf) +
-    geom_sf() +
-    coord_sf(xlim = c(-0.5103751, 0.3340155), ylim = c(51.2867602, 51.6918741)) +
-    labs(title = "Pubs in London", x = "Longitude", y = "Latitude") +
-    theme_minimal()
-```
-
-
-This map would look so much better if we had a shapefile of London in the background. Let's import one using `read_sf()`  and add it to the map.
-
-```{r}
-# read in the shapefile of London
-london_sf <- sf::read_sf(paste0(ddir, "/London_Boroughs/London_Boroughs.shp")) %>%
-    st_transform(4326) %>% # transform to WGS84 coordinate system
-    select(BOROUGH, geometry, OBJECTID)
-
-head(london_sf)
-head(london_sf$geometry)
-
-# plot the map without pubs
-basemap <- ggplot(london_sf) +
-    geom_sf() +
-    labs(title = "London Boroughs", x = "Longitude", y = "Latitude") +
-    theme_minimal()
-```
-
-Now add the pubs to the map using `geom_sf()` and the `pubs_sf` object we created earlier. Simply add a new `geom_sf()` layer, specifying the `data` argument to be `pubs_sf`, and set the color and size of the points. You don't need to specify any `aes()` mappings.
-
-```{r}
-# Your code goes here
-```
-
-Spatial data can not just be plotted (though arguably this is when working with it is most fun), it can also be used for analyses. We could, for example, calculate the area of each borough, then merge pubs to boroughs and calculate the pub density per borough. 
-
-```{r pub_density}
-# calculate the area of each borough
-london_sf <- london_sf %>%
-    mutate(area = st_area(geometry)) # area in square meters
-
-# check for each pub which borough it is in
-pubs_sf <- st_join(pubs_sf, london_sf, join = st_within)
-pubs_sf
-```
-
-Note, we now have the BOROUGH information in the pub data. `st_join()` simply looked at the coordinates and the shapes and used the `st_within` operation to locate the pubs in the boroughs.
-
-Calculate pub density per borough. Call the new object `pub_density` and make sure it has the columns `BOROUGH`, `pub_count`, and `pub_density` (the latter is the number of pubs per square kilometer).
-
-
-```{r calculate_density}
-# calculate the pub density per borough
-
-# Your code goes here
-```
-
-
-Now we need to merge the pub density with the geospatial data of London using a simple `left_join()`. 
-
-```{r merge_density}
-# Your code goes here
-
-```
-
-
-Plot the pub density on a map of London.
-
-```{r plot_density}
-# Your code goes here
-```
-
-
-## Exercise 3 - Working with APIs and unnesting data
-
-In this exercise, you will collect data about MPs via the UK parliament API. We will download names, party affiliations, and images.  
-
-### Using APIs 
-
-The house of commons website has a public API that allow you to access information about MPs. You can find the documentation here: [https://developer.parliament.uk](https://developer.parliament.uk). The API returns data in JSON format, which is easy to work with in R.
-
-We will use the {httr2} package to create and perform API requests. You have to specify an endpoints, the parameters (query) you want to use, and the format you want the data to be returned in. 
-
-```{r hoc_api}
-# We use the members search API without any parameters to get all MPs
-request <- request("https://members-api.parliament.uk") %>%
-    # specify the endpoint we want to access (Members/Search)
-    req_url_path("api", "Members", "Search") %>%
-    # specify the format we want to be returned (JSON)
-    req_headers("Accept" = "application/json")
-
-# check the request (this doesn't perform the request, just shows what it would do)
-request %>%
-    req_dry_run()
-
-# perform the request
-response <- request %>%
-    req_perform()
-
-# Check response
-cat("Status:", resp_status(response), "\n") # 200 is good, everything with 4xx or 5xx is bad. https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
-
-# Extract the content to a list
-content <- resp_body_json(response)
-
-# Let's inspect this
-lengths(content) # 20 items and some metadata
-
-# inspect the first item
-content$items[[1]] %>% str()
-# content$items[[1]] %>% View()
-```
-
-
-Using the correct indexing, extract the following information:
-
-- The name of the first MP
-- The name of the party of the first MP
-- The number of results returned by the API
-- The number of results per page
-
-```{r}
-# Your code goes here
-```
-
-
-If we need to loop (paginate), we get the links for the next and previous pages in the response. This is helpful!
-```{r}
-content$links
-content$links[[2]]
-content$links[[2]]$href
-```
-
-
-Two things to note here: the API is about to return all MPs it has data for, we don't want that. Let's only look at those MPs that served at any point since 1 January 2015. We can do this by adding a `membershipStartDate` parameter to the API call. Let's also add a PartyId value so we only get Labour and Tory politicians. The second thing to note is that the API returns data in pages, so we will need to loop through the pages to get all the data. The `links` part of the response will be very useful for this, as it contains the URLs for the next and previous pages.
-
-```{r}
-# add the membershipStartDate parameter to the API call
-tory_req <- request("https://members-api.parliament.uk/api/Members/Search") %>%
-    req_url_query(`membershipStartDate` = "2015-01-01T00:00:00.000Z", `PartyId` = 4) %>%
-    req_headers("Accept" = "application/json")
-
-# check the request
-tory_req %>% req_dry_run()
-
-# perform the request
-tory_resp <- tory_req %>% req_perform()
-```
-
-
-Great, usually, we would now do a loop to get all the MPs! When we loop, we make repeated calls to the API and we should stick to good etiquette. Let's first check the API documentation whether there are rate limits to respect. I couldn't find any. We can check the headers of the response to see if there are any rate limits. 
-
-```{r}
-resp_header(tory_resp, "X-RateLimit-Remaining")
-resp_header(tory_resp, "X-RateLimit-Reset")
-```
-
-
-There are no rate limits that we are being made aware of (and 20 responses per page is little, so it might make sense that the API provider is generous with the rate.) Still, we don't want to accidentally DDoS the UK Parliament website, so let's add a throttle to our request. We will also retry the request if we get a rate limit error (HTTP status code 429) or a service down error (HTTP status code 503) but not more than three times. Note: if the package you use for scraping does not support throttling, you can use `Sys.sleep()` to pause the execution of your code for a certain number of seconds.
-
-```{r}
-# create an etiquette-compliant request
-etiquette <- function(req) {
-    req <- req %>%
-        # specify how to proceed after server errors
-        req_retry(
-            # try again up to 3 times if the server returns a rate limit or service down error
-            max_tries = 3,
-            # Retry on rate limit errors (usually 429)
-            is_transient = \(resp) resp_status(resp) %in% c(429, 503),
-            # retry if WIFI is down
-            retry_on_failure = TRUE
-        ) %>%
-        req_throttle(
-            # Maximum 30 requests per 60 seconds
-            capacity = 30,
-            fill_time_s = 60
-        )
-
-    return(req)
-}
-```
-
-
-We are ready to loop through the pages of the API. We won't do this here to avoid overloading the API, so the below is pseudo-code.
-
-::: {.callout-important title="Warning"}
-Please do not run the code below, it is just pseudo-code to illustrate how you would loop through the pages of the API. We have already downloaded the data for you and saved it in the `data/mps` directory as `tories_untidy.json` and `labour_untidy.json`.
-:::
-
-
-```{r pseudo_loop, eval=FALSE}
-# initialise an empty list to store the results
-mps <- list()
-
-# start at the first result (the API returns results in pages of 20)
-skip <- 0
-
-# create the request object with the initial parameters
-request <- request("https://members-api.parliament.uk/api/Members/Search") %>%
-    req_url_query(
-        `membershipStartDate` = "2015-01-01T00:00:00.000Z", `PartyId` = 4,
-        `skip` = skip, `take` = 20
-    ) %>%
-    req_headers("Accept" = "application/json") %>%
-    etiquette()
-
-# loop through the pages of the API
-repeat({
-    # Perform the request
-    response <- request %>% req_perform()
-
-    # get the response body as JSON
-    body <- resp_body_json(response)
-
-    # append the results to the list
-    mps <- c(mps, body$items)
-
-    # Extract url for the next page
-    next_page_url <- body$links[[2]]$href
-
-    # If there is no next page, we are done
-    if (is.null(next_page_url)) {
-        break # exit the loop if there is no next page
-    }
-
-    # If there is a next page, update the request with the next page URL
-    request <- request %>%
-        req_url_path(next_page_url) %>%
-        etiquette()
-
-    # print progress
-    cat("Downloaded", length(mps), "of", resp_body_json(tory_resp)$totalResults, "MPs so far...\n")
-})
-```
-
-### Unnesting deeply nested data
-
-We ran this code for you before and downloaded all the Tory and Labour MPs that served since 1 January 2015. Import the `labour_untidy.json` and `tories_untidy.json` files from the `data/mps` directory to get the data. The data will be stored as a nested list in R. We further add to its nestedness by combining the two lists into one.
-
-```{r}
-# read in the data
-labour_json <- jsonlite::read_json(paste0(mdir, "/labour_untidy.json"))
-tories_json <- jsonlite::read_json(paste0(mdir, "/tories_untidy.json"))
-
-mp_list <- list(tories_json, labour_json) # combine the two lists
-
-```
-
-
-Let's now try to unnest this data as much as possible. There are two very helpful packages to help us with this: {tidyr} and {purrr}. The former is great for tidying data, the latter is great for working with lists. 
-
-{tidyr} has two workhorses for unnesting data: `unnest_longer()` and `unnest_wider()`. As a general rule, use `unnest_wider()` if there are multiple variables in a list and you want to turn them into columns. Use `unnest_longer()` if there is only one variable in a list but it has multiple values. 
-
-Use `map()` from {purrr} together with `pluck()` to extract specific values from deeply nested lists. This can be helpful when you know that at a certain level, there is one observation per row which you want to extract. 
-
-In the chunk below, use the functions described above to create a dataframe has one row per MP and one column per variable. It should contain all the information in the `item` section of the html response and the contact url for each MP (from the `links` section of the response). There is some code already there to get you started, but the rest is up to you.
-```{r}
-# Unnest this deeply nested data
-mp_df <- mp_list %>%
-    # convert to a tibble (data frame that can handle nested data better)
-    tibble() %>%
-    # row 1 are the tories, row 2 are the labour MPs. Let's unnest longer so each row is one MP (with all their info in a list)
-    tidyr::unnest_longer(mp_list) %>%
-    # now we have a list of MPs, but each MP has a list of values. Let's unnest this wider so each column is one value
-    tidyr::unnest_wider(mp_list)
-
-# Your code goes here
-```
-
-
-You will encounter `.json` data very often in data science. If you have nested data, it is often more efficient to use json than csv or other rectangular formats that would require duplicate rows or would hold many NA values. 
-
-
-## Exercise 4 - Working with images
-
-Let's use the dataframe we just created to download the images of Tory and Labour MPs (we have the urls). Again, we already did that for you, so you don't need to download all images, but let's familiarize ourselves with the process based on an example. 
-
-If you didn't manage to create the dataframe with the MPs, you can use the `mps.csv` file in the `data/mps` directory. It contains all the information we need to download the images.
-
-```{r, eval=FALSE}
 # read in the MPs data
 mp_df <- read.csv(paste0(mdir, "/mps.csv")) %>%
     tibble()
@@ -924,53 +528,213 @@ How much you can do with image data really comes down to which features you are 
 
 Also note that video image is nothing but a sequence of images. So once you have mastered image data, you can also work with video data as well, it's just a question of computing power and storage space.
 
-## Bonus - Hidden APIs
 
-Very often, websites have APIs that can conveniently be used to access data but that are not publicly documented. These APIs are often used by the website itself to display data on the page, but they are not intended for public use. However, you can still access them by inspecting the network requests made by the website. The same scraping etiquette as with static webscraping applies!
+## Exercise 4: Geospatial data
 
-Try out the following:
+We will begin by turning the pubs coordinates from a string into actual coordinates that R can understand. Then, we will plot the pubs on an interactive Map of london using `leaflet`. Finally, we will use the `sf` package and a shapefile to plot a map of London Neighbourhoods' pub-density.
 
-- Go to the LSE summer school page: <https://www.lse.ac.uk/study-at-lse/summer-schools/summer-school>
-- Open the developer tools in your browser (F12 or right-click and select "Inspect")
-- Go to the "Network" tab and reload the page
-- select the subject area "Research Methods"
-- Click search and monitor the network requests
-- Locate the most recent "search" request in the network tab. Right-click it and copy as cURL.
-- Navigate to <https://hoppscotch.io> (usually, you would want to use "Postman" for this, but Hoppscotch is a nice web-based alternative)
-- Paste the cURL command into Hoppscotch and execute it
-- You will see that the API returns a JSON object with all the courses in the Research Methods subject area. You can use this API, change query parameters and easily retrieve data from the LSE summer school website.
-- You can also export the code to R and then use the `httr2` package. The below code is what you would get:
+Read in the .csv with all coordinates. This is the dataframe you would obtain if you scraped all the pub coordinates from Wikipedia (see the webscraping exercise in Seminar 11).
 
-Notice that there is a header with an access token. It was probably generated when I accessed the page and is only valid for a limited time. This is one way that APIs are protected and it means that the code below will only work for a limited time. If you encounter such an API, you can either try to regenerate access tokens regularly or switch to more brute-force scraping methods like `RSelenium`, essentially imitating to interact with the website like a human.
+```{r}
+pubs_df <- read.csv(paste0(ddir, "/pubs_coords.csv")) %>%
+    tibble()
+```
 
-```{r, eval=FALSE}
-# Make the request
-response <- request("https://api-else.cloud.contensis.com/api/delivery/projects/summerschool/entries/search") %>%
-    req_url_query(
-        fields = "entryTitle,entryDescription,standfirst,sys.contentTypeId,sys.slug,sys.uri,sys.version.published,thumbnailImage,hero,featuredImage,programmeType,format,programmeStatus,location,subjectArea",
-        linkDepth = "1",
-        pageIndex = "0",
-        pageSize = "15",
-        where = '[{"field":"sys.versionStatus","equalTo":"published"},{"field":"subjectArea.sys.id","in":["da09c8b3-49c7-4b87-bf57-44ab5f0a68d7"]},{"and":[{"field":"sys.dataFormat","equalTo":"entry"},{"field":"sys.contentTypeId","in":["programme"]}]}]'
+
+First, we will create an interactive map of historic pubs in London using the {leaflet} package. We need to prepare the data a little bit to make it suitable for plotting on a map. The coordinates are in a format that {parzer} can parse, so we will use that to convert them into latitude and longitude columns.
+
+```{r interactive_map}
+pubs_df <- pubs_df %>%
+    mutate(
+        lat = parzer::parse_llstr(coords)[, 1],
+        lon = parzer::parse_llstr(coords)[, 2],
     ) %>%
-    req_headers(
-        accesstoken = "gnIlDXEa99dkods6o6PZfZ3vAVrBqeUecgrywqZ00SUDwRi7"
-    ) %>%
-    req_perform()
+    select(-coords) %>%
+    filter(!is.na(lat) & !is.na(lon)) # remove rows with NA coordinates
+```
 
-# Get the content
-data <- resp_body_json(response)
+
+Next, let's create a basemap zoomed in on London. 
+
+```{r}
+# create an interactive map using leaflet
+int_map <- leaflet(pubs_df) %>%
+    addTiles() %>%
+    setView(lng = -0.1276, lat = 51.5074, zoom = 10)
+
+int_map
 
 ```
 
 
+Now,  use the `addMarkers()` function to add the pubs to the map. You can also add a popup with the pub name to the Marker.
+```{r}
+# Your code goes here
+?addMarkers
+```
+
+We can also plot the pubs on a static map using {ggplot2}. To do this, we need to convert the pubs data frame to a spatial object using the `sf` package. We will use the `st_as_sf()` function to convert the data frame to a spatial object first.
+
+```{r static_map}
+# convert the pubs data frame to a spatial object
+pubs_sf <- pubs_df %>%
+    sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) # WGS84 is a common coordinate system
+
+# plot the pubs on a static map using ggplot2
+ggplot(pubs_sf) +
+    geom_sf() +
+    coord_sf(xlim = c(-0.5103751, 0.3340155), ylim = c(51.2867602, 51.6918741)) +
+    labs(title = "Pubs in London", x = "Longitude", y = "Latitude") +
+    theme_minimal()
+```
+
+
+This map would look so much better if we had a shapefile of London in the background. Let's import one using `read_sf()`  and add it to the map.
+
+```{r}
+# read in the shapefile of London
+london_sf <- sf::read_sf(paste0(ddir, "/London_Boroughs/London_Boroughs.shp")) %>%
+    st_transform(4326) %>% # transform to WGS84 coordinate system
+    select(BOROUGH, geometry, OBJECTID)
+
+head(london_sf)
+head(london_sf$geometry)
+
+# plot the map without pubs
+basemap <- ggplot(london_sf) +
+    geom_sf() +
+    labs(title = "London Boroughs", x = "Longitude", y = "Latitude") +
+    theme_minimal()
+```
+
+Now add the pubs to the map using `geom_sf()` and the `pubs_sf` object we created earlier. Simply add a new `geom_sf()` layer, specifying the `data` argument to be `pubs_sf`, and set the color and size of the points. You don't need to specify any `aes()` mappings.
+
+```{r}
+# Your code goes here
+```
+
+Spatial data can not just be plotted (though arguably this is when working with it is most fun), it can also be used for analyses. We could, for example, calculate the area of each borough, then merge pubs to boroughs and calculate the pub density per borough. 
+
+```{r pub_density}
+# calculate the area of each borough
+london_sf <- london_sf %>%
+    mutate(area = st_area(geometry)) # area in square meters
+
+# check for each pub which borough it is in
+pubs_sf <- st_join(pubs_sf, london_sf, join = st_within)
+pubs_sf
+```
+
+Note, we now have the BOROUGH information in the pub data. `st_join()` simply looked at the coordinates and the shapes and used the `st_within` operation to locate the pubs in the boroughs.
+
+Calculate pub density per borough. Call the new object `pub_density` and make sure it has the columns `BOROUGH`, `pub_count`, and `pub_density` (the latter is the number of pubs per square kilometer).
+
+
+```{r calculate_density}
+# calculate the pub density per borough
+
+# Your code goes here
+```
+
+
+Now we need to merge the pub density with the geospatial data of London using a simple `left_join()`. 
+
+```{r merge_density}
+# Your code goes here
+
+```
+
+
+Plot the pub density on a map of London.
+
+```{r plot_density}
+# Your code goes here
+```
+
+
+
+## Bonus: Audio data
+
+::: {.callout-warning}
+This bonus exercise downloads a large audio file and uses the `tuneR` and `seewave` packages, which can be fiddly to install on some systems (and audio playback in particular is platform-dependent). Treat it as optional and come back to it if you have time.
+:::
+
+```{r}
+package_check(c("tuneR", "seewave"))
+```
+
+Sound is an **analogue** signal: a continuous wave of air pressure. To store it digitally we **sample** it (measure the amplitude many times per second) and **quantise** each reading (round it to one of a finite set of levels). Let's see this with a famous speech: Martin Luther King's "I have a dream".
+
+We download the `.mp3` once and cache it, so we don't re-download every time:
+
+```{r}
+url <- "https://ia801605.us.archive.org/25/items/MLKDream/MLKDream.mp3"
+mlk.file <- paste0(ddir, "/MLKDream.mp3")
+if (!file.exists(mlk.file)) {
+    download.file(url, mlk.file)
+}
+```
+
+Read it into R with `tuneR`. Printing the object tells us how it was digitised:
+
+```{r}
+mlk <- readMP3(mlk.file)
+print(mlk)
+```
+
+The metadata is stored in "slots", accessed with `@`:
+
+```{r}
+mlk@samp.rate # sampling frequency (samples per second, in Hz)
+mlk@bit # bit depth (bits used to quantise each sample)
+mlk@stereo # one channel (mono) or two (stereo)?
+```
+
+In the chunk below: the recording is quantised at 16-bit. How many distinct amplitude levels is that? And at this sampling rate, how many seconds apart is each sample?
+
+```{r}
+# Your code goes here
+```
+
+This file is labelled stereo, but it is really **dual mono**: the left and right channels are identical. We can check this directly:
+
+```{r}
+all(mlk@left == mlk@right) # TRUE means the two channels are identical
+```
+
+Working with the whole speech is memory-heavy, so let's extract the famous 13-second clip (from 673 to 686 seconds) and reduce it to a single channel:
+
+```{r}
+mlk.clip <- extractWave(mlk, from = 673, to = 686, xunit = "time")
+mlk.clip <- mono(mlk.clip, which = "left")
+```
+
+The sampled amplitudes are in the `@left` slot. Plotting them against time gives an **oscillogram**: the digital approximation of the original sound wave. In the chunk below, build a tibble with `seconds` (the sample index divided by the sampling rate) and `amplitude` (the values in `@left`), then plot it with `ggplot2`. Then make a second plot zoomed in to the first 110 samples, to see the shape of the wave.
+
+```{r}
+# Your code goes here
+```
+
+An oscillogram shows time and amplitude, but not **frequency** (pitch). A **spectrogram** shows all three: it is a heat map of frequency and amplitude over time.
+
+```{r}
+spectro(mlk.clip)
+```
+
+A **periodogram** shows which frequencies are most dominant (highest amplitude) across the clip:
+
+```{r}
+periodogram(mlk.clip)
+```
 
 ## By the end of this seminar you should:
 
-- understand how to transform html data into tidy data using {rvest}
+- Understand how digital data is stored as bits and bytes, and how Base64 moves binary data through text-only channels
 
-- be aware of the availability and usefulness of APIs and have some understanding of their structure
+- Read, detect, and fix encoding issues in text files
+
+- Understand how image data can be represented and used in R
 
 - Be able to ingest, merge, and plot geospatial data using the {sf} package
 
-- Understand how image data can be represented and used in R
+- (Bonus) Ingest and visualise audio data with {tuneR} and {seewave}
