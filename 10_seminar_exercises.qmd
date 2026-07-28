@@ -29,26 +29,28 @@ execute:
 ```{r setup_r, message=FALSE, warning=FALSE}
 # load packages
 package_check <- function(need = c()) {
-    have <- need %in% rownames(installed.packages()) # checks packages you have
-    if (any(!have)) install.packages(need[!have]) # install missing packages
-    invisible(lapply(need, library, character.only = TRUE))
+  have <- need %in% rownames(installed.packages()) # checks packages you have
+  if (any(!have)) {
+    install.packages(need[!have])
+  } # install missing packages
+  invisible(lapply(need, library, character.only = TRUE))
 }
 
 # remotes::install_github("ropensci/parzer", upgrade = FALSE) # for parsing coordinates
 
 required_packages <- c(
-    "readr", # for reading text files and handling encoding
-    "openssl", # for Base64 encoding of binary data
-    "dplyr", # for data management
-    "ggplot2", # for plotting
-    "tibble", # for data frames
-    "tidyr", # for data tidying
-    "jpeg", # for working with image data
-    "caret", # for machine learning
-    "randomForest", # For random forests
-    "sf", # for geospatial data (beautiful package)
-    "leaflet", # for interactive maps
-    "parzer" # for parsing coordinates
+  "readr", # for reading text files and handling encoding
+  "openssl", # for Base64 encoding of binary data
+  "dplyr", # for data management
+  "ggplot2", # for plotting
+  "tibble", # for data frames
+  "tidyr", # for data tidying
+  "jpeg", # for working with image data
+  "caret", # for machine learning
+  "randomForest", # For random forests
+  "sf", # for geospatial data (beautiful package)
+  "leaflet", # for interactive maps
+  "parzer" # for parsing coordinates
 )
 
 package_check(required_packages)
@@ -63,15 +65,25 @@ Before we proceed, let's do some "directory management". For this seminar code t
 
 ```{r dirs}
 # the data directories, relative to the seminar folder
+setwd("/Users/charlottekuberka/Desktop/ME314/2026_versions/Seminar10")
+
 ddir <- "data"
 mdir <- "data/mps"
 
-required_data <- c("London_Boroughs", "mps", "pubs_coords.csv",
-                   "utf-examples-8.txt", "utf-examples-16.txt", "utf-examples-32.txt")
+required_data <- c(
+  "London_Boroughs",
+  "mps",
+  "pubs_coords.csv",
+  "utf-examples-8.txt",
+  "utf-examples-16.txt",
+  "utf-examples-32.txt"
+)
 if (all(required_data %in% list.files(ddir))) {
-    cat("Data directory correctly set up\n")
+  cat("Data directory correctly set up\n")
 } else {
-    cat("You have misspecified the directory. Please read the instructions above carefully and try again.\n")
+  cat(
+    "You have misspecified the directory. Please read the instructions above carefully and try again.\n"
+  )
 }
 ```
 
@@ -80,11 +92,11 @@ if (all(required_data %in% list.files(ddir))) {
 
 Everything on a computer is stored as **bits** (0s and 1s), grouped into **bytes** (8 bits). Before we worry about what data *means*, let's look at how R stores it as raw bytes, and how we can move non-text data through text-only channels using Base64.
 
-When you create an object in R, you are making digital data. R shows it to you in a friendly format, but you can ask for the underlying bytes.
+When you create an object in R, you are making digital data. R shows it to you in a friendly format (R interprets it for us already and provides the data in a readable format ), but you can ask for the underlying bytes.
 
 ```{r}
 x <- 5L # an integer object
-as.raw(x) # the byte, written as a hex code
+as.raw(x) # the byte, written as a hex code (minimal R interpretation)
 as.integer(x) # the same byte in decimal
 ```
 
@@ -176,6 +188,8 @@ __ASCII and Unicode:__
 __Mojibake__ = underlying bit sequences translated into the wrong characters $\rightarrow$ wrongly detected encoding of a text file returns gibberish
 
 
+![](figs/utf8-examples.png)
+
 First, let's examine how special characters can affect file size. Since `readr` encodes all text files with UTF-8, special characters will require more bytes.
 
 When a plain text file is initially saved, it has an encoding. But the encoding is not stored as metadata in plain text files.
@@ -230,7 +244,7 @@ We load the MP data from the `mps.csv` file in the `data/mps` directory. It cont
 ```{r}
 # read in the MPs data
 mp_df <- read.csv(paste0(mdir, "/mps.csv")) %>%
-    tibble()
+  tibble()
 ```
 
 Once we have the images, we will read them into R and inspect their numeric representation. We will use nothing but the color values to train a random forest model to predict whether an MP is a Labour MP or a Tory MP. 
@@ -241,10 +255,10 @@ Let's begin by creating a path for each MP's image. We will use the `id` column 
 ```{r}
 # Create a new column in the mp_df dataframe with the path to the image
 mp_df <- mp_df %>%
-    mutate(
-        # create a new column with the image URL
-        image = paste0(mdir, "/", id, ".jpg")
-    )
+  mutate(
+    # create a new column with the image URL
+    image = paste0(mdir, "/", id, ".jpg")
+  )
 
 head(mp_df$image)
 
@@ -257,24 +271,30 @@ file.remove(mp_df[pms_id, ]$image[c(1, 2)])
 
 # Download the thumbnails to the mp folder
 for (i in pms_id) {
-    # we won't download anything that is already there
-    if (file.exists(mp_df$image[i])) {
-        cat("Image for", mp_df$nameDisplayAs[i], "already exists, skipping download.\n")
-        next
-    }
+  # we won't download anything that is already there
+  if (file.exists(mp_df$image[i])) {
+    cat(
+      "Image for",
+      mp_df$nameDisplayAs[i],
+      "already exists, skipping download.\n"
+    )
+    next
+  }
 
-    # but if we don't have the image, we download it
-    cat("Downloading image for", mp_df$nameDisplayAs[i], "\n")
-    # download the image
+  # but if we don't have the image, we download it
+  cat("Downloading image for", mp_df$nameDisplayAs[i], "\n")
+  # download the image
 
-    download.file(mp_df$thumbnailUrl[i], mp_df$image[i], mode = "wb")
-    # delay for a random number of seconds between 2 and 5
+  download.file(mp_df$thumbnailUrl[i], mp_df$image[i], mode = "wb")
+  # delay for a random number of seconds between 2 and 5
 
-    Sys.sleep(runif(1, min = 0, max = .5))
+  Sys.sleep(runif(1, min = 0, max = .5))
 }
-
 ```
 
+#### Understanding the Structure of RGB Images and How Pixel Values Represent Color
+
+![](figs/rgb_images.png)
 
 Let's now check how we can use R to work with image data. We will use the `jpeg` package to read the images into R. The images are stored in JPEG format, so we will use the `readJPEG()` function from the `jpeg` package.
 
@@ -285,12 +305,14 @@ img <- readJPEG(mp_df[grep("Sunak", mp_df$nameListAs), ]$image)
 dim(img)
 
 # We have 240 rows and 240 columns, meaning that the image has 240x240 pixels. Each pixel has three color channels: red, green, and blue. The values are between 0 and 1, where 0 is no color and 1 is full color intensity.
+```
 
+```{r}
 ## Create a long tibble that ggplot can recognise and plot as a raster
 tp <- tibble(expand.grid(y = dim(img)[1]:1, x = 1:dim(img)[2]))
-tp$r <- as.vector(img[, , 1])
-tp$g <- as.vector(img[, , 2])
-tp$b <- as.vector(img[, , 3])
+tp$r <- as.vector(img[,, 1])
+tp$g <- as.vector(img[,, 2])
+tp$b <- as.vector(img[,, 3])
 
 # convert RGB to hex for filling
 tp$fill <- rgb(tp$r, tp$g, tp$b)
@@ -303,18 +325,17 @@ sum(tp$b)
 
 # Now plot
 z <- ggplot(tp, aes(x = x, y = y, fill = fill)) +
-    geom_raster() +
-    scale_fill_identity() +
-    coord_equal(ratio = 1) +
-    theme_void() +
-    theme(
-        plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
-        plot.subtitle = element_text(hjust = 0.5, size = 12, face = "italic"),
-        strip.text.x = element_text(size = 6)
-    )
+  geom_raster() +
+  scale_fill_identity() +
+  coord_equal(ratio = 1) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, size = 12, face = "italic"),
+    strip.text.x = element_text(size = 6)
+  )
 
 print(z)
-
 ```
 
 
@@ -322,20 +343,19 @@ Ok wow, nothing stops ggplot2! Let's create a picture from scratch, simply of th
 
 ```{r, eval=FALSE}
 tibble(
-    x = _______,
-    y = _______,
-    fill = c(
-        _______,
-        _______,
-        _______
-    )
+  x = c(1, 2, 3),
+  y = c(1, 1, 1),
+  fill = c(
+    rgb(1, 0, 0), # red
+    rgb(0, 1, 0), # green
+    rgb(0, 0, 1) # blue
+  )
 ) %>%
-    ggplot(aes(x = x, y = y, fill = fill)) +
-    geom_tile() +
-    scale_fill_identity() +
-    coord_equal(ratio = 1) +
-    theme_void()
-
+  ggplot(aes(x = x, y = y, fill = fill)) +
+  geom_tile() +
+  scale_fill_identity() +
+  coord_equal(ratio = 1) +
+  theme_void()
 ```
 
 
@@ -343,22 +363,22 @@ You are, of course, not limited to boring red, green, and blue. By mixing the co
 
 ```{r}
 tibble(
-    x = 1,
-    y = 6:1,
-    fill = c(
-        rgb(0.894, 0.012, 0.012), # Red
-        rgb(1.000, 0.549, 0.000), # Orange
-        rgb(1.000, 0.929, 0.000), # Yellow
-        rgb(0.000, 0.502, 0.149), # Green
-        rgb(0.000, 0.302, 1.000), # Blue
-        rgb(0.459, 0.027, 0.529) # Purple
-    )
+  x = 1,
+  y = 6:1,
+  fill = c(
+    rgb(0.894, 0.012, 0.012), # Red
+    rgb(1.000, 0.549, 0.000), # Orange
+    rgb(1.000, 0.929, 0.000), # Yellow
+    rgb(0.000, 0.502, 0.149), # Green
+    rgb(0.000, 0.302, 1.000), # Blue
+    rgb(0.459, 0.027, 0.529) # Purple
+  )
 ) %>%
-    ggplot(aes(x = x, y = y, fill = fill)) +
-    geom_tile(width = 3, height = 1) +
-    scale_fill_identity() +
-    coord_fixed(ratio = .30) +
-    theme_void() 
+  ggplot(aes(x = x, y = y, fill = fill)) +
+  geom_tile(width = 3, height = 1) +
+  scale_fill_identity() +
+  coord_fixed(ratio = .30) +
+  theme_void()
 ```
 
 
@@ -373,64 +393,66 @@ Below, we define a function that extracts features from a single image. In the f
 ```{r}
 # Function to extract features from a single image
 extract_image_features <- function(img_path) {
-    img <- readJPEG(img_path) # read the image
+  img <- readJPEG(img_path) # read the image
 
-    # Extract RGB channels
-    r <- ______________
-    g <- ______________
-    b <- ______________
+  # Extract RGB channels
+  r <- ______________
+  g <- ______________
+  b <- ______________
 
-    # Calculate various red-related features
-    features <- list(
+  # Calculate various red-related features
+  features <- list(
+    # Basic red statistics
+    mean_red = _______,
+    median_red = _______,
+    sd_red = _______,
+    max_red = max(r),
+    min_red = min(r),
 
-        # Basic red statistics
-        mean_red = _______,
-        median_red = _______,
-        sd_red = _______,
-        max_red = max(r),
-        min_red = min(r),
+    # Red relative to other channels
+    mean_red_minus_green = mean(r - g),
+    mean_red_minus_blue = mean(r - b),
+    mean_red_ratio = mean(r / (r + g + b + 0.001)), # avoid division by zero
 
-        # Red relative to other channels
-        mean_red_minus_green = mean(r - g),
-        mean_red_minus_blue = mean(r - b),
-        mean_red_ratio = mean(r / (r + g + b + 0.001)), # avoid division by zero
+    # Proportion of pixels where red is dominant
+    prop_red_dominant = mean(r > g & r > b),
+    prop_strong_red_dominant = mean(r > g + 0.1 & r > b + 0.1),
 
-        # Proportion of pixels where red is dominant
-        prop_red_dominant = mean(r > g & r > b),
-        prop_strong_red_dominant = mean(r > g + 0.1 & r > b + 0.1),
+    # Red intensity features
+    prop_high_red = mean(r > 0.5),
+    prop_very_high_red = mean(r > 0.7),
+    mean_red_squared = mean(r^2),
 
-        # Red intensity features
-        prop_high_red = mean(r > 0.5),
-        prop_very_high_red = mean(r > 0.7),
-        mean_red_squared = mean(r^2),
+    # Pure red detection (high red, low green/blue)
+    prop_pure_red = mean(r > 0.5 & g < 0.3 & b < 0.3),
+    prop_reddish = mean(r > 0.4 & r > g + 0.1 & r > b + 0.1),
 
-        # Pure red detection (high red, low green/blue)
-        prop_pure_red = mean(r > 0.5 & g < 0.3 & b < 0.3),
-        prop_reddish = mean(r > 0.4 & r > g + 0.1 & r > b + 0.1),
+    # Color saturation features
+    mean_saturation = mean(pmax(r, g, b) - pmin(r, g, b)),
+    mean_red_saturation = mean(ifelse(
+      r == pmax(r, g, b),
+      pmax(r, g, b) - pmin(r, g, b),
+      0
+    )),
 
-        # Color saturation features
-        mean_saturation = mean(pmax(r, g, b) - pmin(r, g, b)),
-        mean_red_saturation = mean(ifelse(r == pmax(r, g, b),
-            pmax(r, g, b) - pmin(r, g, b), 0
-        )),
+    # Warm vs cool colors
+    warm_color_ratio = mean((r + 0.5 * g) / (b + 0.5 * g + 0.001)),
 
-        # Warm vs cool colors
-        warm_color_ratio = mean((r + 0.5 * g) / (b + 0.5 * g + 0.001)),
+    # Red clustering (how concentrated is red in the image)
+    red_top_quartile_mean = mean(sort(r, decreasing = TRUE)[
+      1:floor(length(r) * 0.25)
+    ]),
 
-        # Red clustering (how concentrated is red in the image)
-        red_top_quartile_mean = mean(sort(r, decreasing = TRUE)[1:floor(length(r) * 0.25)]),
+    # Other color channel features for comparison
+    mean_green = mean(g),
+    mean_blue = mean(b),
 
-        # Other color channel features for comparison
-        mean_green = mean(g),
-        mean_blue = mean(b),
+    # Overall brightness
+    mean_brightness = mean((r + g + b) / 3)
+  )
 
-        # Overall brightness
-        mean_brightness = mean((r + g + b) / 3)
-    )
-
-    return(features)
+  return(features)
 }
-
 ```
 
 
@@ -439,15 +461,15 @@ Now, let's loop through all the images and extract the features we defined above
 ```{r, warning=FALSE, message=FALSE}
 # this will throw a bunch of errors because some MPs have no image (just a placeholder)
 image_features <- lapply(mp_df$image, function(x) {
-    tryCatch(
-        {
-            extract_image_features(x)
-        },
-        error = function(e) {
-            message("Error processing image: ", x, " - ", e$message)
-            return(NULL) # return NULL if there is an error
-        }
-    )
+  tryCatch(
+    {
+      extract_image_features(x)
+    },
+    error = function(e) {
+      message("Error processing image: ", x, " - ", e$message)
+      return(NULL) # return NULL if there is an error
+    }
+  )
 })
 
 # some errors which we can ignore
@@ -456,10 +478,13 @@ dim(mp_df)
 
 # turn this into a dataframe and add the MP info
 image_df <- image_features %>%
-    tibble() %>%
-    tidyr::unnest_wider(1) %>%
-    mutate(id = mp_df$id, name = mp_df$nameDisplayAs, party = mp_df$latestParty_name)
-
+  tibble() %>%
+  tidyr::unnest_wider(1) %>%
+  mutate(
+    id = mp_df$id,
+    name = mp_df$nameDisplayAs,
+    party = mp_df$latestParty_name
+  )
 ```
 
 
@@ -473,18 +498,22 @@ dim(image_df)
 # Convert party to a factor
 table(image_df$party)
 
-image_df$labour <- ifelse(image_df$party == "Labour" |
-    image_df$party == "Labour (Co-op)", 1, 0)
+image_df$labour <- ifelse(
+  image_df$party == "Labour" |
+    image_df$party == "Labour (Co-op)",
+  1,
+  0
+)
 
-image_df$labour <- factor(image_df$labour,
-    levels = c(0, 1),
-    labels = c("Tory", "Labour")
+image_df$labour <- factor(
+  image_df$labour,
+  levels = c(0, 1),
+  labels = c("Tory", "Labour")
 )
 
 # remove all character columns and the id
 image_df <- image_df %>%
-    select(-c(id, name, party))
-
+  select(-c(id, name, party))
 ```
 
 
@@ -493,7 +522,11 @@ Let's create a train-test split and train a random forest model to predict wheth
 ```{r}
 # Test and train split
 set.seed(12345)
-train_idx <- sample(1:nrow(image_df), size = 0.8 * nrow(image_df), replace = FALSE)
+train_idx <- sample(
+  1:nrow(image_df),
+  size = 0.8 * nrow(image_df),
+  replace = FALSE
+)
 train_X <- image_df[train_idx, ] %>% select(-labour)
 train_y <- image_df[train_idx, ]$labour
 test_X <- image_df[-train_idx, ] %>% select(-labour)
@@ -501,11 +534,12 @@ test_y <- image_df[-train_idx, ]$labour
 
 # Random Forest for classification, no hyperparameter tuning
 rf_model <- randomForest(
-    x = train_X, y = train_y,
-    importance = TRUE,
-    ntree = 250,
-    mtry = 2,
-    type = "classification"
+  x = train_X,
+  y = train_y,
+  importance = TRUE,
+  ntree = 250,
+  mtry = 2,
+  type = "classification"
 )
 
 # Check the model
@@ -531,13 +565,15 @@ Also note that video image is nothing but a sequence of images. So once you have
 
 ## Exercise 4: Geospatial data
 
+![](figs/spatial_objects.png)
+
 We will begin by turning the pubs coordinates from a string into actual coordinates that R can understand. Then, we will plot the pubs on an interactive Map of london using `leaflet`. Finally, we will use the `sf` package and a shapefile to plot a map of London Neighbourhoods' pub-density.
 
 Read in the .csv with all coordinates. This is the dataframe you would obtain if you scraped all the pub coordinates from Wikipedia (see the webscraping exercise in Seminar 11).
 
 ```{r}
 pubs_df <- read.csv(paste0(ddir, "/pubs_coords.csv")) %>%
-    tibble()
+  tibble()
 ```
 
 
@@ -545,12 +581,12 @@ First, we will create an interactive map of historic pubs in London using the {l
 
 ```{r interactive_map}
 pubs_df <- pubs_df %>%
-    mutate(
-        lat = parzer::parse_llstr(coords)[, 1],
-        lon = parzer::parse_llstr(coords)[, 2],
-    ) %>%
-    select(-coords) %>%
-    filter(!is.na(lat) & !is.na(lon)) # remove rows with NA coordinates
+  mutate(
+    lat = parzer::parse_llstr(coords)[, 1],
+    lon = parzer::parse_llstr(coords)[, 2],
+  ) %>%
+  select(-coords) %>%
+  filter(!is.na(lat) & !is.na(lon)) # remove rows with NA coordinates
 ```
 
 
@@ -559,11 +595,10 @@ Next, let's create a basemap zoomed in on London.
 ```{r}
 # create an interactive map using leaflet
 int_map <- leaflet(pubs_df) %>%
-    addTiles() %>%
-    setView(lng = -0.1276, lat = 51.5074, zoom = 10)
+  addTiles() %>%
+  setView(lng = -0.1276, lat = 51.5074, zoom = 10)
 
 int_map
-
 ```
 
 
@@ -578,14 +613,19 @@ We can also plot the pubs on a static map using {ggplot2}. To do this, we need t
 ```{r static_map}
 # convert the pubs data frame to a spatial object
 pubs_sf <- pubs_df %>%
-    sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) # WGS84 is a common coordinate system
+  sf::st_as_sf(coords = c("lon", "lat"), crs = 4326) # WGS84 is a common coordinate system
 
 # plot the pubs on a static map using ggplot2
 ggplot(pubs_sf) +
-    geom_sf() +
-    coord_sf(xlim = c(-0.5103751, 0.3340155), ylim = c(51.2867602, 51.6918741)) +
-    labs(title = "Pubs in London", x = "Longitude", y = "Latitude") +
-    theme_minimal()
+  geom_sf() +
+  coord_sf(xlim = c(-0.5103751, 0.3340155), ylim = c(51.2867602, 51.6918741)) +
+  labs(title = "Pubs in London", x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+# let's compare the structures of both data objects
+
+str(pubs_df)
+str(pubs_sf)
 ```
 
 
@@ -593,21 +633,26 @@ This map would look so much better if we had a shapefile of London in the backgr
 
 ```{r}
 # read in the shapefile of London
-london_sf <- sf::read_sf(paste0(ddir, "/London_Boroughs/London_Boroughs.shp")) %>%
-    st_transform(4326) %>% # transform to WGS84 coordinate system
-    select(BOROUGH, geometry, OBJECTID)
+london_sf <- sf::read_sf(paste0(
+  ddir,
+  "/London_Boroughs/London_Boroughs.shp"
+)) %>%
+  st_transform(4326) %>% # transform to WGS84 coordinate system
+  select(BOROUGH, geometry, OBJECTID)
 
 head(london_sf)
 head(london_sf$geometry)
 
 # plot the map without pubs
 basemap <- ggplot(london_sf) +
-    geom_sf() +
-    labs(title = "London Boroughs", x = "Longitude", y = "Latitude") +
-    theme_minimal()
+  geom_sf() +
+  labs(title = "London Boroughs", x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+basemap
 ```
 
-Now add the pubs to the map using `geom_sf()` and the `pubs_sf` object we created earlier. Simply add a new `geom_sf()` layer, specifying the `data` argument to be `pubs_sf`, and set the color and size of the points. You don't need to specify any `aes()` mappings.
+Now add the pubs to the map using `geom_sf()` and the `pubs_sf` object we created earlier. Simply add a new `geom_sf()` layer, specifying the `data` argument to be `pubs_sf`, and set the color to "red" and size of the points to 0.5. You don't need to specify any `aes()` mappings.
 
 ```{r}
 # Your code goes here
@@ -618,7 +663,7 @@ Spatial data can not just be plotted (though arguably this is when working with 
 ```{r pub_density}
 # calculate the area of each borough
 london_sf <- london_sf %>%
-    mutate(area = st_area(geometry)) # area in square meters
+  mutate(area = st_area(geometry)) # area in square meters
 
 # check for each pub which borough it is in
 pubs_sf <- st_join(pubs_sf, london_sf, join = st_within)
@@ -640,7 +685,7 @@ Calculate pub density per borough. Call the new object `pub_density` and make su
 Now we need to merge the pub density with the geospatial data of London using a simple `left_join()`. 
 
 ```{r merge_density}
-# Your code goes here
+# merge with the london_sf data based on the BOROUGH column
 
 ```
 
@@ -649,6 +694,22 @@ Plot the pub density on a map of London.
 
 ```{r plot_density}
 # Your code goes here
+
+# if there was no pub at all, it will be NA, so we can replace that with 0
+london_sf <- london_sf %>%
+  mutate(pub_density = ifelse(is.na(pub_count), 0, pub_density)) # replace NA with 0
+
+# Let's plot the ultimate pub density map
+ggplot(london_sf) +
+  geom_sf(aes(fill = as.numeric(pub_density)), color = "white") +
+  scale_fill_viridis_c(option = "C", name = "Pub Density (per km²)") +
+  labs(
+    title = "Historic Pubs per Square Kilometer",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 
@@ -671,7 +732,7 @@ We download the `.mp3` once and cache it, so we don't re-download every time:
 url <- "https://ia801605.us.archive.org/25/items/MLKDream/MLKDream.mp3"
 mlk.file <- paste0(ddir, "/MLKDream.mp3")
 if (!file.exists(mlk.file)) {
-    download.file(url, mlk.file)
+  download.file(url, mlk.file)
 }
 ```
 
