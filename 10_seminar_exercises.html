@@ -2860,13 +2860,18 @@ window.Quarto = {
 <span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>int_map <span class="ot">&lt;-</span> <span class="fu">leaflet</span>(pubs_df) <span class="sc">%&gt;%</span></span>
 <span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">addTiles</span>() <span class="sc">%&gt;%</span></span>
 <span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">setView</span>(<span class="at">lng =</span> <span class="sc">-</span><span class="fl">0.1276</span>, <span class="at">lat =</span> <span class="fl">51.5074</span>, <span class="at">zoom =</span> <span class="dv">10</span>)</span>
-<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a>int_map</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a>int_map</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>Now, use the <code>addMarkers()</code> function to add the pubs to the map. You can also add a popup with the pub name to the Marker.</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Your code goes here</span></span>
-<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>?addMarkers</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>?addMarkers</span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>int_map <span class="sc">%&gt;%</span></span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">addMarkers</span>(</span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">lng =</span> <span class="sc">~</span>lon, <span class="at">lat =</span> <span class="sc">~</span>lat,</span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">popup =</span> <span class="sc">~</span> <span class="fu">paste0</span>(<span class="st">&quot;&lt;b&gt;&quot;</span>, name, <span class="st">&quot;&lt;/b&gt;&lt;br&gt;&quot;</span>)</span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>    )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>We can also plot the pubs on a static map using {ggplot2}. To do this, we need to convert the pubs data frame to a spatial object using the <code>sf</code> package. We will use the <code>st_as_sf()</code> function to convert the data frame to a spatial object first.</p>
 <div class="cell">
@@ -2909,7 +2914,10 @@ window.Quarto = {
 </div>
 <p>Now add the pubs to the map using <code>geom_sf()</code> and the <code>pubs_sf</code> object we created earlier. Simply add a new <code>geom_sf()</code> layer, specifying the <code>data</code> argument to be <code>pubs_sf</code>, and set the color to “red” and size of the points to 0.5. You don’t need to specify any <code>aes()</code> mappings.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Your code goes here</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Your code goes here</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>basemap <span class="sc">+</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_sf</span>(<span class="at">data =</span> pubs_sf, <span class="at">color =</span> <span class="st">&quot;red&quot;</span>, <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">&quot;Historic Pubs in London&quot;</span>, <span class="at">subtitle =</span> <span class="st">&quot;Red dots indicate pubs&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <p>Spatial data can not just be plotted (though arguably this is when working with it is most fun), it can also be used for analyses. We could, for example, calculate the area of each borough, then merge pubs to boroughs and calculate the pub density per borough.</p>
 <div class="cell">
